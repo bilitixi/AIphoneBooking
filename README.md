@@ -33,10 +33,12 @@ pytest
 
 ## Notes
 
-- `app/voice/transcriber.py` and `app/voice/synthesizer.py` define the
-  STT/TTS interfaces but the concrete Deepgram/AssemblyAI/ElevenLabs/Cartesia
-  wiring is left as `NotImplementedError` pending the vendor decision in
-  design doc §7.1 (prototype latency before committing).
+- `app/voice/transcriber.py` (Deepgram) and `app/voice/synthesizer.py`
+  (ElevenLabs) are wired up for real, using mulaw/8kHz in both directions so
+  no audio transcoding is needed between Twilio and either vendor. Set
+  `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`, and `ELEVENLABS_VOICE_ID` in
+  `.env`. AssemblyAI/Cartesia are left as stubs if you want to prototype the
+  alternative per design doc §7.1.
 - The reservation exclusion constraint (`schema.sql` / migration `0001`) is
   the actual source of truth for preventing double-booking; app code only
   reacts to it (`ReservationConflict`).

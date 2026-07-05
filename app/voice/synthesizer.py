@@ -1,13 +1,19 @@
 """Streaming TTS client wrapper.
 
-Vendor is undecided (§7.1 — prototype latency with both before committing).
-Same rationale as transcriber.py: isolate the vendor behind this interface.
+ElevenLabs is wired up as the default (§7.1 called for prototyping 2 vendors
+— ElevenLabs is implemented for real below; Cartesia is still a stub). Same
+rationale as transcriber.py: isolate the vendor behind this interface.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 
+import httpx
+
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class Synthesizer(ABC):
@@ -18,12 +24,34 @@ class Synthesizer(ABC):
 
 
 class ElevenLabsSynthesizer(Synthesizer):
-    def __init__(self, api_key: str):
+    """Requests mulaw/8kHz output directly (`output_format=ulaw_8000`) so the
+    bytes can be forwarded to Twilio's media stream with no transcoding."""
+
+    def __init__(self, api_key: str, voice_id: str):
         self._api_key = api_key
+        self._voice_id = voice_id
 
     async def stream(self, text: str) -> AsyncIterator[bytes]:
-        raise NotImplementedError
-        yield  # pragma: no cover
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{self._voice_id}/stream"
+        params = {"output_format": "ulaw_8000"}
+        headers = {"xi-api-key": self._api_key, "Content-Type": "application/json"}
+        payload = {
+            "text": text,
+            "model_id": "eleven_turbo_v2_5",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                async with client.stream(
+                    "POST", url, params=params, headers=headers, json=payload
+                ) as response:
+                    response.raise_for_status()
+                    async for chunk in response.aiter_bytes():
+                        if chunk:
+                            yield chunk
+            except httpx.HTTPError:
+                logger.exception("ElevenLabs TTS request failed")
 
 
 class CartesiaSynthesizer(Synthesizer):
@@ -38,7 +66,7 @@ class CartesiaSynthesizer(Synthesizer):
 def create_synthesizer() -> Synthesizer:
     settings = get_settings()
     if settings.tts_provider == "elevenlabs":
-        return ElevenLabsSynthesizer(settings.elevenlabs_api_key)
+        return ElevenLabsSynthesizer(settings.elevenlabs_api_key, settings.elevenlabs_voice_id)
     if settings.tts_provider == "cartesia":
         return CartesiaSynthesizer(settings.cartesia_api_key)
     raise ValueError(f"Unknown TTS_PROVIDER: {settings.tts_provider}")
