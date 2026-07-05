@@ -26,6 +26,7 @@ class Settings(BaseSettings):
 
     tts_provider: str = "elevenlabs"
     elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = ""
     cartesia_api_key: str = ""
 
     jwt_secret: str = "change-me"
