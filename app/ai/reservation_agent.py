@@ -26,6 +26,10 @@ Rules:
 - modify_reservation and cancel_reservation only work for reservations tied \
   to the caller's own phone number. If a lookup fails, say so plainly rather \
   than guessing at another reservation.
+- After successfully booking a reservation, remind the caller they'll need \
+  to call back from this same phone number if they want to change or cancel \
+  it later — say this naturally as part of the confirmation, not as a separate \
+  disclaimer.
 """
 
 MAX_TOOL_ITERATIONS = 6
