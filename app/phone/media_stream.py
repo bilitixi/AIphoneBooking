@@ -23,6 +23,25 @@ async def _log(db, call_id, role: str, content: str, tool_name: str | None = Non
     await db.commit()
 
 
+GREETING = (
+    "Hi, thanks for calling ABC Restaurant! I'm your reservation assistant — "
+    "are you looking to book a table, or change or cancel an existing reservation?"
+)
+
+
+async def _speak(websocket: WebSocket, synthesizer, stream_sid: str, text: str) -> None:
+    async for audio_chunk in synthesizer.stream(text):
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "event": "media",
+                    "streamSid": stream_sid,
+                    "media": {"payload": base64.b64encode(audio_chunk).decode()},
+                }
+            )
+        )
+
+
 async def _escalate_call(call_sid: str) -> None:
     """Redirects the live call to the staff line — same <Dial> path used for
     takeaway transfers. Done via the REST API since we can't return TwiML
@@ -65,6 +84,10 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
 
         caller_phone_number = call.from_number
 
+        conversation.append({"role": "assistant", "content": [{"type": "text", "text": GREETING}]})
+        await _log(db, call.id, "agent", GREETING)
+        await _speak(websocket, synthesizer, stream_sid, GREETING)
+
         async def handle_transcripts():
             nonlocal conversation
             async for transcript in transcriber.finalized_transcripts():
@@ -81,17 +104,7 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     return
 
                 await _log(db, call.id, "agent", reply)
-                async for audio_chunk in synthesizer.stream(reply):
-                    if stream_sid:
-                        await websocket.send_text(
-                            json.dumps(
-                                {
-                                    "event": "media",
-                                    "streamSid": stream_sid,
-                                    "media": {"payload": base64.b64encode(audio_chunk).decode()},
-                                }
-                            )
-                        )
+                await _speak(websocket, synthesizer, stream_sid, reply)
 
         transcript_task = asyncio.create_task(handle_transcripts())
 
