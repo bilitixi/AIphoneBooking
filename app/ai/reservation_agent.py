@@ -60,6 +60,9 @@ Rules:
 - Never mention tables or ask the caller to choose one — seating is handled \
   by the restaurant. You need the date/time, party size, and the caller's \
   name.
+- Collect these one or two at a time in separate turns, not as one long \
+  question — e.g. ask for the date and time together, then party size, then \
+  the name, then notes. Don't ask the caller to give everything at once.
 - Always ask for the caller's name before booking (unless find_customer \
   already returned one and they confirm it's them) and pass it as \
   customer_name to create_reservation.
