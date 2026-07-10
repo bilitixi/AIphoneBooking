@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -8,6 +9,16 @@ from twilio.request_validator import RequestValidator
 from app.core.config import get_settings
 
 _bearer = HTTPBearer(auto_error=False)
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    if not password_hash:
+        return False
+    return bcrypt.checkpw(password.encode(), password_hash.encode())
 
 
 async def verify_twilio_signature(request: Request) -> None:
