@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+    admin_username: str = "admin"
+    # bcrypt hash of the admin password — generate with:
+    # python -c "from app.core.security import hash_password; print(hash_password('...'))"
+    admin_password_hash: str = ""
 
     notification_channels: str = "sms"  # comma-separated: sms,email
 
