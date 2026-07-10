@@ -1,13 +1,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
-    pass
+    # The database columns are all TIMESTAMPTZ (see schema.sql), so datetime
+    # attributes must map to timezone-aware DateTime — otherwise asyncpg
+    # rejects aware datetimes bound against naive-typed parameters.
+    type_annotation_map = {datetime: DateTime(timezone=True)}
 
 
 class Customer(Base):
