@@ -87,6 +87,15 @@ TOOL_DEFINITIONS = [
         "description": "Transfer the live call to a human staff member — use immediately if your first attempt to help fails, or if the caller explicitly asks for a person.",
         "input_schema": {"type": "object", "properties": {"reason": {"type": "string"}}, "required": ["reason"]},
     },
+    {
+        "name": "end_call",
+        "description": (
+            "Hang up the phone call. Use only after you have said goodbye and "
+            "the caller's request is complete (e.g. booking confirmed) or they "
+            "indicated they're done."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -180,6 +189,12 @@ async def escalate_to_staff(reason: str) -> dict:
     return {"escalate": True, "reason": reason}
 
 
+async def end_call() -> dict:
+    # media_stream.py inspects this and hangs up once the goodbye audio has
+    # finished playing.
+    return {"end_call": True}
+
+
 DISPATCH = {
     "find_customer": find_customer,
     "check_availability": check_availability,
@@ -187,4 +202,5 @@ DISPATCH = {
     "modify_reservation": modify_reservation,
     "cancel_reservation": cancel_reservation,
     "escalate_to_staff": escalate_to_staff,
+    "end_call": end_call,
 }

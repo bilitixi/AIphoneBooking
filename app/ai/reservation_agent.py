@@ -60,6 +60,11 @@ Rules:
   to call back from this same phone number if they want to change or cancel \
   it later — say this naturally as part of the confirmation, not as a separate \
   disclaimer.
+- Once the caller's request is complete — booking confirmed, or change/cancel \
+  done — and they have nothing else, say a warm goodbye and then call end_call \
+  to hang up. Say the goodbye in the same reply as the end_call tool call, \
+  never call end_call without having said goodbye first, and never use it \
+  mid-conversation.
 """
 
 
@@ -117,6 +122,11 @@ OnText = Callable[[str], Awaitable[None]]
 class Escalate(Exception):
     def __init__(self, reason: str):
         self.reason = reason
+
+
+class EndCall(Exception):
+    """The agent finished the conversation and asked to hang up. Raised after
+    the turn's text (the goodbye) has already been streamed via on_text."""
 
 
 def _split_complete_sentences(buf: str) -> tuple[str, str]:
@@ -194,6 +204,8 @@ async def run_turn(
             result = await _execute_tool(db, caller_phone_number, tool_use.name, tool_use.input)
             if isinstance(result, dict) and result.get("escalate"):
                 raise Escalate(result.get("reason", "caller requested a person"))
+            if isinstance(result, dict) and result.get("end_call"):
+                raise EndCall()
             tool_results.append(
                 {"type": "tool_result", "tool_use_id": tool_use.id, "content": _serialize(result)}
             )

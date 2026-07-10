@@ -7,7 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from twilio.rest import Client as TwilioClient
 
-from app.ai.reservation_agent import TOOL_FILLER, Escalate, run_turn
+from app.ai.reservation_agent import TOOL_FILLER, EndCall, Escalate, run_turn
 from app.core.config import get_settings
 from app.db.models import CallLog, PhoneCall
 from app.db.session import async_session_factory
@@ -71,6 +71,12 @@ async def _escalate_call(call_sid: str) -> None:
     client.calls(call_sid).update(twiml=twiml)
 
 
+async def _hangup_call(call_sid: str) -> None:
+    settings = get_settings()
+    client = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
+    client.calls(call_sid).update(status="completed")
+
+
 @router.websocket("/ws/reservation")
 async def reservation_media_stream(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -109,6 +115,10 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
         await _log(db, call.id, "agent", GREETING)
         await _speak(websocket, synthesizer, stream_sid, GREETING)
 
+        # Resolved by the main receive loop when Twilio reports our "goodbye"
+        # mark has played — i.e. the caller has actually heard the farewell.
+        goodbye_played: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+
         async def speak_text(text: str) -> None:
             await _speak(websocket, synthesizer, stream_sid, text)
 
@@ -129,6 +139,24 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     call.outcome = "escalated_to_staff"
                     await db.commit()
                     await _escalate_call(call_sid)
+                    return
+                except EndCall:
+                    # The goodbye was already streamed via speak_text; ask
+                    # Twilio to tell us when playback reaches this point so we
+                    # don't hang up mid-sentence.
+                    await _log(db, call.id, "agent", "[call ended by agent]")
+                    call.outcome = call.outcome or "handled_by_ai"
+                    await db.commit()
+                    await websocket.send_text(
+                        json.dumps(
+                            {"event": "mark", "streamSid": stream_sid, "mark": {"name": "goodbye"}}
+                        )
+                    )
+                    try:
+                        await asyncio.wait_for(asyncio.shield(goodbye_played), timeout=20)
+                    except asyncio.TimeoutError:
+                        logger.warning("Never got goodbye mark for %s; hanging up anyway", call_sid)
+                    await _hangup_call(call_sid)
                     return
                 except Exception:
                     logger.exception("Unhandled error running turn for %s", caller_phone_number)
@@ -157,6 +185,9 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                 if event == "media":
                     audio = base64.b64decode(message["media"]["payload"])
                     await transcriber.send_audio(audio)
+                elif event == "mark":
+                    if not goodbye_played.done():
+                        goodbye_played.set_result(True)
                 elif event == "stop":
                     call.outcome = call.outcome or "handled_by_ai"
                     await db.commit()
