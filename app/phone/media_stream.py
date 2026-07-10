@@ -28,6 +28,12 @@ GREETING = (
 _CACHEABLE_PHRASES = {GREETING, TOOL_FILLER}
 _audio_cache: dict[str, list[bytes]] = {}
 
+# How long after the agent stops speaking to keep ignoring transcripts. Phone
+# lines (speakerphone, VOIP echo) can leak the agent's own TTS audio back
+# into the caller's mic; without this, STT transcribes that leakage as caller
+# speech and the agent ends up replying to itself.
+ECHO_GRACE_SECONDS = 0.4
+
 
 async def _send_audio(websocket: WebSocket, stream_sid: str, audio_chunk: bytes) -> None:
     await websocket.send_text(
@@ -95,6 +101,21 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
     synthesizer = create_synthesizer()
     conversation: list[dict] = []
 
+    # Guards handle_transcripts against hearing the agent's own voice echoed
+    # back through the caller's line. `speaking` covers the audio actually in
+    # flight; mute_until covers the tail-off grace period after it finishes.
+    speaking = False
+    mute_until = 0.0
+
+    async def speak(text: str) -> None:
+        nonlocal speaking, mute_until
+        speaking = True
+        try:
+            await _speak(websocket, synthesizer, stream_sid, text)
+        finally:
+            speaking = False
+            mute_until = asyncio.get_running_loop().time() + ECHO_GRACE_SECONDS
+
     async with async_session_factory() as db:
         result = await db.execute(select(PhoneCall).where(PhoneCall.call_sid == call_sid))
         call = result.scalar_one_or_none()
@@ -108,14 +129,14 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
         # the first message to have role "user", so an assistant-authored
         # greeting can't lead the history — it's spoken and logged only.
         logger.info("agent [%s]: %s", call_sid, GREETING)
-        await _speak(websocket, synthesizer, stream_sid, GREETING)
+        await speak(GREETING)
 
         # Resolved by the main receive loop when Twilio reports our mark has
         # played — i.e. the caller has actually heard everything sent so far.
         playback_done: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
 
         async def speak_text(text: str) -> None:
-            await _speak(websocket, synthesizer, stream_sid, text)
+            await speak(text)
 
         async def wait_until_played() -> None:
             """Blocks until all audio queued so far has played to the caller,
@@ -133,6 +154,14 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
         async def handle_transcripts():
             nonlocal conversation
             async for transcript in transcriber.finalized_transcripts():
+                if speaking or asyncio.get_running_loop().time() < mute_until:
+                    logger.info(
+                        "caller [%s]: dropped transcript while agent was speaking (echo guard): %s",
+                        call_sid,
+                        transcript,
+                    )
+                    continue
+
                 logger.info("caller [%s]: %s", call_sid, transcript)
                 conversation.append({"role": "user", "content": transcript})
 
@@ -170,11 +199,8 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     logger.exception("Unhandled error running turn for %s", caller_phone_number)
                     call.outcome = "escalated_to_staff"
                     await db.commit()
-                    await _speak(
-                        websocket,
-                        synthesizer,
-                        stream_sid,
-                        "Sorry, I'm having trouble with that. Let me connect you with a team member.",
+                    await speak(
+                        "Sorry, I'm having trouble with that. Let me connect you with a team member."
                     )
                     await wait_until_played()
                     await _escalate_call(call_sid)
