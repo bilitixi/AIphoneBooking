@@ -84,7 +84,9 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
 
         caller_phone_number = call.from_number
 
-        conversation.append({"role": "assistant", "content": [{"type": "text", "text": GREETING}]})
+        # Not seeded into `conversation`: the Anthropic Messages API requires
+        # the first message to have role "user", so an assistant-authored
+        # greeting can't lead the history — it's spoken and logged only.
         await _log(db, call.id, "agent", GREETING)
         await _speak(websocket, synthesizer, stream_sid, GREETING)
 
@@ -100,6 +102,19 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     await _log(db, call.id, "agent", f"[escalating: {esc.reason}]")
                     call.outcome = "escalated_to_staff"
                     await db.commit()
+                    await _escalate_call(call_sid)
+                    return
+                except Exception:
+                    logger.exception("Unhandled error running turn for %s", caller_phone_number)
+                    await _log(db, call.id, "agent", "[error: unhandled exception during turn]")
+                    call.outcome = "escalated_to_staff"
+                    await db.commit()
+                    await _speak(
+                        websocket,
+                        synthesizer,
+                        stream_sid,
+                        "Sorry, I'm having trouble with that. Let me connect you with a team member.",
+                    )
                     await _escalate_call(call_sid)
                     return
 
