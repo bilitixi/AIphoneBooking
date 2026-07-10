@@ -24,8 +24,8 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "check_tables",
-        "description": "Check which tables are available for a given date/time and party size.",
+        "name": "check_availability",
+        "description": "Check whether the restaurant can seat a party at a given date/time.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -38,20 +38,22 @@ TOOL_DEFINITIONS = [
     {
         "name": "create_reservation",
         "description": (
-            "Book a table. May fail if the table was just booked by someone "
-            "else since check_tables was called — in that case, offer the "
-            "caller other options instead of retrying blindly."
+            "Book a reservation. May fail if the slot filled up since "
+            "check_availability was called — in that case, offer the caller "
+            "other times instead of retrying blindly."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "phone_number": {"type": "string"},
-                "table_id": {"type": "string"},
                 "party_size": {"type": "integer"},
                 "starts_at": {"type": "string", "description": "ISO-8601 datetime"},
-                "special_requests": {"type": "string"},
+                "special_requests": {
+                    "type": "string",
+                    "description": "Any notes the caller wants to leave (allergies, occasions, seating preferences).",
+                },
             },
-            "required": ["phone_number", "table_id", "party_size", "starts_at"],
+            "required": ["phone_number", "party_size", "starts_at"],
         },
     },
     {
@@ -100,15 +102,20 @@ async def find_customer(db: AsyncSession, phone_number: str) -> dict:
     }
 
 
-async def check_tables(db: AsyncSession, starts_at: str, party_size: int) -> dict:
-    options = await reservation_service.check_tables(db, datetime.fromisoformat(starts_at), party_size)
-    return {"options": [{"table_id": str(o.table_id), "label": o.label, "seats": o.seats} for o in options]}
+async def check_availability(db: AsyncSession, starts_at: str, party_size: int) -> dict:
+    availability = await reservation_service.check_availability(
+        db, datetime.fromisoformat(starts_at), party_size
+    )
+    result = {"available": availability.available, "seats_remaining": availability.remaining}
+    if availability.closed_reason is not None:
+        result["closed"] = True
+        result["reason"] = availability.closed_reason
+    return result
 
 
 async def create_reservation(
     db: AsyncSession,
     phone_number: str,
-    table_id: str,
     party_size: int,
     starts_at: str,
     special_requests: str | None = None,
@@ -118,21 +125,13 @@ async def create_reservation(
         reservation = await reservation_service.create_reservation(
             db,
             customer_id=customer.id,
-            table_id=UUID(table_id),
             party_size=party_size,
             starts_at=datetime.fromisoformat(starts_at),
             special_requests=special_requests,
         )
     except reservation_service.ReservationConflict as exc:
         await db.rollback()
-        alternatives = await reservation_service.check_tables(
-            db, datetime.fromisoformat(starts_at), party_size
-        )
-        return {
-            "success": False,
-            "error": str(exc),
-            "alternatives": [{"table_id": str(a.table_id), "label": a.label, "seats": a.seats} for a in alternatives],
-        }
+        return {"success": False, "error": str(exc)}
 
     await db.commit()
     return {"success": True, "reservation_id": str(reservation.id)}
@@ -183,7 +182,7 @@ async def escalate_to_staff(reason: str) -> dict:
 
 DISPATCH = {
     "find_customer": find_customer,
-    "check_tables": check_tables,
+    "check_availability": check_availability,
     "create_reservation": create_reservation,
     "modify_reservation": modify_reservation,
     "cancel_reservation": cancel_reservation,

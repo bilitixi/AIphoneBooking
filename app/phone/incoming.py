@@ -24,8 +24,8 @@ async def incoming_call(
     vr = VoiceResponse()
     vr.say(
         "Welcome to ABC Restaurant. This call may be recorded for quality "
-        "purposes. For takeaway orders, press 1. To make, change, or cancel "
-        "a reservation, press 2."
+        "purposes. For ordering takeaway, press 1. To book a table, or "
+        "change or cancel a reservation, press 2."
     )
     gather = Gather(num_digits=1, action=f"{settings.public_base_url}/phone/gather", method="POST")
     vr.append(gather)

@@ -17,7 +17,6 @@ router = APIRouter(prefix="/api/reservations", tags=["reservations"], dependenci
 class ReservationOut(BaseModel):
     id: UUID
     customer_id: UUID
-    table_id: UUID
     party_size: int
     starts_at: datetime
     ends_at: datetime
@@ -31,7 +30,6 @@ class ReservationOut(BaseModel):
 
 class CreateReservationIn(BaseModel):
     customer_id: UUID
-    table_id: UUID
     party_size: int
     starts_at: datetime
     special_requests: str | None = None
@@ -40,7 +38,6 @@ class CreateReservationIn(BaseModel):
 class UpdateReservationIn(BaseModel):
     starts_at: datetime | None = None
     party_size: int | None = None
-    table_id: UUID | None = None
     special_requests: str | None = None
 
 
@@ -65,7 +62,6 @@ async def create_reservation(payload: CreateReservationIn, db: AsyncSession = De
         reservation = await reservation_service.create_reservation(
             db,
             customer_id=payload.customer_id,
-            table_id=payload.table_id,
             party_size=payload.party_size,
             starts_at=payload.starts_at,
             source="staff_portal",
