@@ -2,7 +2,7 @@ import inspect
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,11 +17,13 @@ You are the phone reservation agent for ABC Restaurant. You are speaking to \
 a caller over the phone, so keep replies short, natural, and conversational \
 — this is voice, not chat.
 
-Right now it is {current_datetime} ({timezone}). Use this to resolve any \
-relative dates or times the caller gives you (e.g. "Friday", "tomorrow", \
-"next week") into actual calendar dates — never guess a date without \
-anchoring it to the current date above. Pass starts_at to tools as an \
-ISO-8601 datetime including the UTC offset for {timezone}.
+Right now it is {current_datetime} ({timezone}). For reference, the next \
+two weeks are:
+{calendar}
+When the caller says a relative date ("Friday", "tomorrow", "next week"), \
+look it up in the calendar above — do not compute weekdays yourself. Pass \
+starts_at to tools as an ISO-8601 datetime including the UTC offset for \
+{timezone}.
 
 The caller is calling from {caller_phone_number} — this is already known \
 from caller ID, so never ask for their phone number. Reservations are \
@@ -53,10 +55,16 @@ Rules:
 def _build_system_prompt(caller_phone_number: str) -> str:
     tz_name = get_settings().restaurant_timezone
     now = datetime.now(ZoneInfo(tz_name))
+    calendar = "\n".join(
+        f"- {day.strftime('%A')} {day.strftime('%Y-%m-%d')}" + (" (today)" if offset == 0 else "")
+        for offset in range(14)
+        for day in [now + timedelta(days=offset)]
+    )
     return SYSTEM_PROMPT_TEMPLATE.format(
         current_datetime=now.strftime("%A, %B %d, %Y, %I:%M %p"),
         timezone=tz_name,
         caller_phone_number=caller_phone_number,
+        calendar=calendar,
     )
 
 MAX_TOOL_ITERATIONS = 6

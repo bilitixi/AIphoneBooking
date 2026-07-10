@@ -18,6 +18,13 @@ Create the database, then run migrations:
 alembic upgrade head
 ```
 
+Seed the floor plan (without rows in `restaurant_tables`, every availability
+check comes back empty and the agent reports "fully booked"):
+
+```bash
+psql "$DATABASE_URL" -f seed.sql
+```
+
 Run the app:
 
 ```bash
