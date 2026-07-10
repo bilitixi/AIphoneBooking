@@ -40,13 +40,14 @@ class DeepgramTranscriber(Transcriber):
     API (no transcoding needed — Deepgram accepts mulaw natively) and
     surfaces each `is_final` result as one caller utterance."""
 
-    _URL = (
+    _BASE_URL = (
         "wss://api.deepgram.com/v1/listen"
         "?encoding=mulaw&sample_rate=8000&channels=1&punctuate=true&model=nova-2"
     )
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, endpointing_ms: int = 500):
         self._api_key = api_key
+        self._endpointing_ms = endpointing_ms
         self._ws: websockets.ClientConnection | None = None
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._reader_task: asyncio.Task | None = None
@@ -54,8 +55,9 @@ class DeepgramTranscriber(Transcriber):
     async def _ensure_connected(self) -> None:
         if self._ws is not None:
             return
+        url = f"{self._BASE_URL}&endpointing={self._endpointing_ms}"
         self._ws = await websockets.connect(
-            self._URL, additional_headers={"Authorization": f"Token {self._api_key}"}
+            url, additional_headers={"Authorization": f"Token {self._api_key}"}
         )
         self._reader_task = asyncio.create_task(self._read_loop())
 
@@ -113,7 +115,7 @@ class AssemblyAITranscriber(Transcriber):
 def create_transcriber() -> Transcriber:
     settings = get_settings()
     if settings.stt_provider == "deepgram":
-        return DeepgramTranscriber(settings.deepgram_api_key)
+        return DeepgramTranscriber(settings.deepgram_api_key, settings.deepgram_endpointing_ms)
     if settings.stt_provider == "assemblyai":
         return AssemblyAITranscriber(settings.assemblyai_api_key)
     raise ValueError(f"Unknown STT_PROVIDER: {settings.stt_provider}")
