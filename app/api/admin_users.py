@@ -2,10 +2,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password, require_manager
+from app.core.security import AdminIdentity, hash_password, require_manager
 from app.db.models import AdminUser
 from app.db.session import get_db
 
@@ -76,3 +76,27 @@ async def update_admin_user(
     await db.commit()
     await db.refresh(admin)
     return admin
+
+
+@router.delete("/{admin_id}", status_code=204)
+async def delete_admin_user(
+    admin_id: UUID,
+    identity: AdminIdentity = Depends(require_manager),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    admin = await db.get(AdminUser, admin_id)
+    if admin is None:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+
+    if str(admin.id) == identity.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+
+    if admin.role == "manager":
+        result = await db.execute(
+            select(func.count()).select_from(AdminUser).where(AdminUser.role == "manager")
+        )
+        if result.scalar_one() <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last manager")
+
+    await db.delete(admin)
+    await db.commit()
