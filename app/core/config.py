@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    # Comma-separated origins allowed to call /api/* from a browser (the
+    # admin frontend). Defaults cover common local dev servers.
+    cors_allowed_origins: str = "http://localhost:3000,http://localhost:5173"
+
     notification_channels: str = "sms"  # comma-separated: sms,email
 
 
