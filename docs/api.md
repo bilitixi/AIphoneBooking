@@ -75,6 +75,7 @@ Missing or invalid tokens get `401 Unauthorized`.
 | GET | `/api/admin-users` | List all admin accounts |
 | POST | `/api/admin-users` | Create a new admin account |
 | PATCH | `/api/admin-users/{id}` | Change role or activate/deactivate |
+| DELETE | `/api/admin-users/{id}` | Permanently delete an admin account |
 
 ### Object shape
 
@@ -106,6 +107,16 @@ All fields optional.
 ```
 
 `404` if not found, `422` for an invalid role.
+
+### `DELETE /api/admin-users/{id}`
+
+Permanently removes the account (not a soft delete — use
+`PATCH {"is_active": false}` instead if you just want to lock someone out
+without losing the record). `204` on success.
+
+`404` if not found. `400` if you try to delete your own account, or the
+last remaining manager (both would leave the portal with no manager able
+to log in and manage accounts).
 
 ---
 
