@@ -1,12 +1,12 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import require_admin_user
+from app.core.security import require_admin_user, require_manager
 from app.db.models import CapacityLimit
 from app.db.session import get_db
 
@@ -73,10 +73,25 @@ async def update_capacity_limit(
     return limit
 
 
-@router.delete("/{limit_id}", status_code=204)
+@router.delete("/{limit_id}", status_code=204, dependencies=[Depends(require_manager)])
 async def delete_capacity_limit(limit_id: UUID, db: AsyncSession = Depends(get_db)) -> None:
     limit = await db.get(CapacityLimit, limit_id)
     if limit is None:
         raise HTTPException(status_code=404, detail="Capacity limit not found")
     await db.delete(limit)
+    await db.commit()
+
+
+@router.delete("", status_code=204, dependencies=[Depends(require_manager)])
+async def delete_capacity_limits(
+    confirm: bool = Query(
+        False, description="Must be true to permanently delete ALL capacity limits"
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Bulk delete-all counterpart to delete_capacity_limit above (which \
+    already handles deleting a single limit by id)."""
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Pass confirm=true to delete ALL capacity limits")
+    await db.execute(delete(CapacityLimit))
     await db.commit()

@@ -1,11 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import require_admin_user
+from app.core.security import require_admin_user, require_manager
 from app.db.models import Customer
 from app.db.session import get_db
 
@@ -57,3 +57,25 @@ async def update_customer(
     await db.commit()
     await db.refresh(customer)
     return customer
+
+
+@router.delete("", status_code=204, dependencies=[Depends(require_manager)])
+async def delete_customers(
+    customer_id: UUID | None = Query(None, description="Permanently delete only this customer"),
+    confirm: bool = Query(
+        False, description="Must be true to permanently delete ALL customers when customer_id is omitted"
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Deleting a customer cascades to their reservations (FK ondelete=CASCADE)."""
+    if customer_id is not None:
+        result = await db.execute(delete(Customer).where(Customer.id == customer_id))
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Customer not found")
+    else:
+        if not confirm:
+            raise HTTPException(
+                status_code=400, detail="Pass confirm=true to delete ALL customers, or customer_id to delete one"
+            )
+        await db.execute(delete(Customer))
+    await db.commit()
