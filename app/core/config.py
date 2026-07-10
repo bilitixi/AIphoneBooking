@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     env: str = "development"
     log_level: str = "INFO"
     public_base_url: str = "http://localhost:8000"
+    restaurant_timezone: str = "Pacific/Auckland"
 
     database_url: str
 
