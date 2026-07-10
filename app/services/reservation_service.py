@@ -37,11 +37,15 @@ def _parse_hhmm(value: str) -> time:
     return time(int(hour), int(minute))
 
 
+def _fmt(t: time) -> str:
+    return t.strftime("%I:%M %p").lstrip("0")
+
+
 def closed_reason(starts_at: datetime) -> str | None:
-    """Returns a human-readable reason if the restaurant is closed at the
-    requested start time (in restaurant-local terms), else None. Closed all
-    day on configured closed days, and during the weekday break between lunch
-    and dinner service."""
+    """Returns a human-readable reason if a booking can't start at the
+    requested time (in restaurant-local terms), else None. Closed all day on
+    configured closed days; otherwise the start must fall within lunch
+    [open, close) or dinner [open, last_booking]."""
     settings = get_settings()
     tz = ZoneInfo(settings.restaurant_timezone)
     local = starts_at.astimezone(tz) if starts_at.tzinfo else starts_at.replace(tzinfo=tz)
@@ -51,22 +55,21 @@ def closed_reason(starts_at: datetime) -> str | None:
     if day_name.lower() in closed_days:
         return f"the restaurant is closed all day on {day_name}s"
 
-    if local.weekday() < 5:  # Monday-Friday
-        break_start = _parse_hhmm(settings.restaurant_weekday_break_start)
-        break_end = _parse_hhmm(settings.restaurant_weekday_break_end)
-        if break_start <= local.time() < break_end:
-            return (
-                f"the restaurant is closed between "
-                f"{break_start.strftime('%I:%M %p').lstrip('0')} and "
-                f"{break_end.strftime('%I:%M %p').lstrip('0')} on weekdays"
-            )
-
+    lunch_open = _parse_hhmm(settings.restaurant_lunch_open)
+    lunch_close = _parse_hhmm(settings.restaurant_lunch_close)
+    dinner_open = _parse_hhmm(settings.restaurant_dinner_open)
     last_booking = _parse_hhmm(settings.restaurant_last_booking)
-    if local.time() > last_booking:
+    t = local.time()
+
+    if t < lunch_open:
+        return f"the restaurant opens for lunch at {_fmt(lunch_open)}"
+    if lunch_close <= t < dinner_open:
         return (
-            f"the last booking of the evening is at "
-            f"{last_booking.strftime('%I:%M %p').lstrip('0')}"
+            f"the restaurant is closed between lunch and dinner service, "
+            f"from {_fmt(lunch_close)} to {_fmt(dinner_open)}"
         )
+    if t > last_booking:
+        return f"the last booking of the evening is at {_fmt(last_booking)}"
 
     return None
 

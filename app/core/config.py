@@ -14,11 +14,11 @@ class Settings(BaseSettings):
     restaurant_default_capacity: int = 50
     # Days the restaurant is closed entirely (comma-separated day names).
     restaurant_closed_days: str = "sunday"
-    # Daily closure between lunch and dinner service on weekdays (Mon-Fri),
-    # local restaurant time, HH:MM. Bookings starting in [start, end) are
-    # refused.
-    restaurant_weekday_break_start: str = "14:15"
-    restaurant_weekday_break_end: str = "17:00"
+    # Service windows (local restaurant time, HH:MM). Bookings must start
+    # within lunch [open, close) or dinner [open, last_booking].
+    restaurant_lunch_open: str = "11:00"
+    restaurant_lunch_close: str = "14:30"
+    restaurant_dinner_open: str = "17:00"
     # Latest allowed booking start (local time, HH:MM); later starts are refused.
     restaurant_last_booking: str = "20:45"
 

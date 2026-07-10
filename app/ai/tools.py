@@ -46,6 +46,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "phone_number": {"type": "string"},
+                "customer_name": {"type": "string", "description": "The caller's name for the booking."},
                 "party_size": {"type": "integer"},
                 "starts_at": {"type": "string", "description": "ISO-8601 datetime"},
                 "special_requests": {
@@ -53,7 +54,7 @@ TOOL_DEFINITIONS = [
                     "description": "Any notes the caller wants to leave (allergies, occasions, seating preferences).",
                 },
             },
-            "required": ["phone_number", "party_size", "starts_at"],
+            "required": ["phone_number", "customer_name", "party_size", "starts_at"],
         },
     },
     {
@@ -147,9 +148,10 @@ async def create_reservation(
     phone_number: str,
     party_size: int,
     starts_at: str,
+    customer_name: str | None = None,
     special_requests: str | None = None,
 ) -> dict:
-    customer = await customer_service.get_or_create_customer(db, phone_number)
+    customer = await customer_service.get_or_create_customer(db, phone_number, full_name=customer_name)
     try:
         reservation = await reservation_service.create_reservation(
             db,
