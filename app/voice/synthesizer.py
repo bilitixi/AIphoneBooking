@@ -37,9 +37,12 @@ class ElevenLabsSynthesizer(Synthesizer):
     """Requests mulaw/8kHz output directly (`output_format=ulaw_8000`) so the
     bytes can be forwarded to Twilio's media stream with no transcoding."""
 
-    def __init__(self, api_key: str, voice_id: str):
+    def __init__(self, api_key: str, voice_id: str, speed: float = 1.0):
         self._api_key = api_key
         self._voice_id = voice_id
+        # ElevenLabs clamps this server-side, but clamp here too so a bad
+        # env value fails loudly instead of silently no-op'ing.
+        self._speed = max(0.7, min(1.2, speed))
 
     async def stream(self, text: str) -> AsyncIterator[bytes]:
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self._voice_id}/stream"
@@ -48,7 +51,7 @@ class ElevenLabsSynthesizer(Synthesizer):
         payload = {
             "text": text,
             "model_id": "eleven_turbo_v2_5",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": self._speed},
         }
 
         client = _get_http_client()
@@ -76,7 +79,9 @@ class CartesiaSynthesizer(Synthesizer):
 def create_synthesizer() -> Synthesizer:
     settings = get_settings()
     if settings.tts_provider == "elevenlabs":
-        return ElevenLabsSynthesizer(settings.elevenlabs_api_key, settings.elevenlabs_voice_id)
+        return ElevenLabsSynthesizer(
+            settings.elevenlabs_api_key, settings.elevenlabs_voice_id, settings.elevenlabs_speed
+        )
     if settings.tts_provider == "cartesia":
         return CartesiaSynthesizer(settings.cartesia_api_key)
     raise ValueError(f"Unknown TTS_PROVIDER: {settings.tts_provider}")

@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     tts_provider: str = "elevenlabs"
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = ""
+    # 0.7 (slowest) - 1.2 (fastest); 1.0 is ElevenLabs' normal pace.
+    elevenlabs_speed: float = 1.0
     cartesia_api_key: str = ""
 
     jwt_secret: str = "change-me"
