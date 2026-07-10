@@ -113,11 +113,23 @@ All fields optional.
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/reservations` | List all reservations, newest `starts_at` first |
+| GET | `/api/reservations` | List reservations, newest `starts_at` first — filterable |
 | GET | `/api/reservations/{id}` | Get one reservation |
 | POST | `/api/reservations` | Create a reservation |
 | PATCH | `/api/reservations/{id}` | Update a reservation |
 | DELETE | `/api/reservations/{id}` | Cancel a reservation |
+
+### `GET /api/reservations` query params
+
+All optional, combinable:
+
+| Param | Type | Description |
+|---|---|---|
+| `date` | `YYYY-MM-DD` | Restaurant-local calendar day (uses `RESTAURANT_TIMEZONE`) — returns reservations whose `starts_at` falls on that day |
+| `status` | string | Exact match, e.g. `confirmed`, `cancelled`, `completed`, `no_show` |
+| `customer_id` | uuid | Only that customer's reservations |
+
+Example: `GET /api/reservations?date=2026-07-15&status=confirmed`
 
 ### Object shape
 

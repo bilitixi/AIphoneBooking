@@ -1,11 +1,13 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.security import require_admin_user
 from app.db.models import Reservation
 from app.db.session import get_db
@@ -42,8 +44,27 @@ class UpdateReservationIn(BaseModel):
 
 
 @router.get("", response_model=list[ReservationOut])
-async def list_reservations(db: AsyncSession = Depends(get_db)) -> list[Reservation]:
-    result = await db.execute(select(Reservation).order_by(Reservation.starts_at.desc()))
+async def list_reservations(
+    date: date | None = Query(None, description="Restaurant-local date (YYYY-MM-DD); returns that day's reservations"),
+    status: str | None = Query(None, description="Filter by status (e.g. confirmed, cancelled)"),
+    customer_id: UUID | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+) -> list[Reservation]:
+    stmt = select(Reservation).order_by(Reservation.starts_at.desc())
+
+    if date is not None:
+        tz = ZoneInfo(get_settings().restaurant_timezone)
+        day_start = datetime.combine(date, datetime.min.time(), tzinfo=tz)
+        day_end = day_start + timedelta(days=1)
+        stmt = stmt.where(Reservation.starts_at >= day_start, Reservation.starts_at < day_end)
+
+    if status is not None:
+        stmt = stmt.where(Reservation.status == status)
+
+    if customer_id is not None:
+        stmt = stmt.where(Reservation.customer_id == customer_id)
+
+    result = await db.execute(stmt)
     return list(result.scalars().all())
 
 
