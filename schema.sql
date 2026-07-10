@@ -62,14 +62,3 @@ CREATE TABLE phone_calls (
     started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     ended_at      TIMESTAMPTZ
 );
-
-CREATE TABLE call_logs (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    call_id       UUID NOT NULL REFERENCES phone_calls(id) ON DELETE CASCADE,
-    role          TEXT NOT NULL CHECK (role IN ('caller', 'agent', 'tool')),
-    content       TEXT NOT NULL,
-    tool_name     TEXT,                    -- set when role = 'tool'
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_call_logs_call ON call_logs(call_id, created_at);

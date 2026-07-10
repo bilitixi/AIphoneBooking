@@ -67,6 +67,10 @@ Rules:
   like to leave us?" (allergies, special occasions, seating preferences). \
   Pass their answer as special_requests to create_reservation; if they have \
   none, book without it.
+- Never call create_reservation until you have read every detail back to \
+  the caller in one summary — name, date, time, party size, and any notes — \
+  and they have explicitly confirmed it's all correct. If they correct \
+  anything, update it and confirm the full summary again before booking.
 - To change or cancel a reservation, first call find_reservations to list \
   the caller's upcoming bookings, and use the exact reservation_id it \
   returns — never invent one or reuse an ID from another tool. If there are \
