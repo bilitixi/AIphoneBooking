@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,12 +22,53 @@ class Availability:
     available: bool
     remaining: int  # seats left in the requested window (0 if full)
     limit: int  # effective capacity for the window
+    closed_reason: str | None = None  # set when the restaurant is closed at that time
 
 
 class ReservationConflict(Exception):
-    """Raised when the requested window can't seat the party — either it was
-    full to begin with or filled up between the availability check and the
-    insert. The caller should offer alternatives, not retry blindly."""
+    """Raised when the requested window can't seat the party — the restaurant
+    is closed then, it was full to begin with, or it filled up between the
+    availability check and the insert. The caller should offer alternatives,
+    not retry blindly."""
+
+
+def _parse_hhmm(value: str) -> time:
+    hour, minute = value.split(":")
+    return time(int(hour), int(minute))
+
+
+def closed_reason(starts_at: datetime) -> str | None:
+    """Returns a human-readable reason if the restaurant is closed at the
+    requested start time (in restaurant-local terms), else None. Closed all
+    day on configured closed days, and during the weekday break between lunch
+    and dinner service."""
+    settings = get_settings()
+    tz = ZoneInfo(settings.restaurant_timezone)
+    local = starts_at.astimezone(tz) if starts_at.tzinfo else starts_at.replace(tzinfo=tz)
+
+    closed_days = {d.strip().lower() for d in settings.restaurant_closed_days.split(",") if d.strip()}
+    day_name = local.strftime("%A")
+    if day_name.lower() in closed_days:
+        return f"the restaurant is closed all day on {day_name}s"
+
+    if local.weekday() < 5:  # Monday-Friday
+        break_start = _parse_hhmm(settings.restaurant_weekday_break_start)
+        break_end = _parse_hhmm(settings.restaurant_weekday_break_end)
+        if break_start <= local.time() < break_end:
+            return (
+                f"the restaurant is closed between "
+                f"{break_start.strftime('%I:%M %p').lstrip('0')} and "
+                f"{break_end.strftime('%I:%M %p').lstrip('0')} on weekdays"
+            )
+
+    last_booking = _parse_hhmm(settings.restaurant_last_booking)
+    if local.time() > last_booking:
+        return (
+            f"the last booking of the evening is at "
+            f"{last_booking.strftime('%I:%M %p').lstrip('0')}"
+        )
+
+    return None
 
 
 async def _effective_limit(db: AsyncSession, starts_at: datetime, ends_at: datetime) -> int:
@@ -63,6 +105,10 @@ async def check_availability(
     """Best-effort availability read. Advisory only — the authoritative check
     happens under the advisory lock in create_reservation, since availability
     can change between this read and the insert."""
+    reason = closed_reason(starts_at)
+    if reason is not None:
+        return Availability(available=False, remaining=0, limit=0, closed_reason=reason)
+
     ends_at = starts_at + duration
     limit = await _effective_limit(db, starts_at, ends_at)
     seated = await _seated_count(db, starts_at, ends_at)
@@ -78,7 +124,12 @@ async def _assert_capacity(
     exclude_reservation_id: UUID | None = None,
 ) -> None:
     """Takes the capacity advisory lock (held until commit/rollback) and
-    verifies the party fits. Must be called inside the writing transaction."""
+    verifies the restaurant is open and the party fits. Must be called inside
+    the writing transaction."""
+    reason = closed_reason(starts_at)
+    if reason is not None:
+        raise ReservationConflict(f"Bookings aren't possible then — {reason}.")
+
     await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _CAPACITY_LOCK_KEY})
     limit = await _effective_limit(db, starts_at, ends_at)
     seated = await _seated_count(db, starts_at, ends_at, exclude_reservation_id)

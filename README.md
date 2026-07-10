@@ -49,3 +49,9 @@ pytest
 - The agent never asks callers to pick a table; it asks for any notes
   (allergies, occasions) and stores them on the reservation as
   `special_requests`.
+- Opening hours are enforced in `reservation_service.closed_reason` and
+  configured via env: closed all day on `RESTAURANT_CLOSED_DAYS` (default
+  sunday), closed on weekdays between `RESTAURANT_WEEKDAY_BREAK_START` and
+  `RESTAURANT_WEEKDAY_BREAK_END` (default 14:15-17:00), and no bookings
+  starting after `RESTAURANT_LAST_BOOKING` (default 20:45). The agent knows
+  these hours and apologizes instead of booking.

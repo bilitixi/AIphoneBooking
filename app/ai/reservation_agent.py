@@ -30,6 +30,11 @@ from caller ID, so never ask for their phone number. Reservations are \
 automatically tied to this number regardless of what you pass to the tools. \
 When calling find_customer or create_reservation, use this number directly.
 
+Opening hours: {opening_hours_note} If the caller asks for a time when the \
+restaurant is closed, apologize, explain we're closed then, and offer to \
+book a different time instead — don't call check_availability for a time \
+you already know is outside opening hours.
+
 Goals, in order:
 1. Help the caller book, change, or cancel a table reservation.
 2. If your first attempt to help fails for any reason, or the caller asks \
@@ -58,6 +63,32 @@ Rules:
 """
 
 
+def _format_hhmm(value: str) -> str:
+    hour, minute = (int(part) for part in value.split(":"))
+    suffix = "AM" if hour < 12 else "PM"
+    hour12 = hour % 12 or 12
+    return f"{hour12}:{minute:02d} {suffix}"
+
+
+def _opening_hours_note() -> str:
+    settings = get_settings()
+    closed_days = ", ".join(
+        d.strip().capitalize() + "s" for d in settings.restaurant_closed_days.split(",") if d.strip()
+    )
+    parts = []
+    if closed_days:
+        parts.append(f"closed all day on {closed_days}")
+    parts.append(
+        f"closed on weekdays between {_format_hhmm(settings.restaurant_weekday_break_start)} "
+        f"and {_format_hhmm(settings.restaurant_weekday_break_end)}"
+    )
+    parts.append(
+        f"the last booking of the evening is {_format_hhmm(settings.restaurant_last_booking)} "
+        f"— no reservations may start later than that"
+    )
+    return "the restaurant is " + "; ".join(parts) + "."
+
+
 def _build_system_prompt(caller_phone_number: str) -> str:
     tz_name = get_settings().restaurant_timezone
     now = datetime.now(ZoneInfo(tz_name))
@@ -71,6 +102,7 @@ def _build_system_prompt(caller_phone_number: str) -> str:
         timezone=tz_name,
         caller_phone_number=caller_phone_number,
         calendar=calendar,
+        opening_hours_note=_opening_hours_note(),
     )
 
 MAX_TOOL_ITERATIONS = 6

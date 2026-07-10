@@ -106,7 +106,11 @@ async def check_availability(db: AsyncSession, starts_at: str, party_size: int) 
     availability = await reservation_service.check_availability(
         db, datetime.fromisoformat(starts_at), party_size
     )
-    return {"available": availability.available, "seats_remaining": availability.remaining}
+    result = {"available": availability.available, "seats_remaining": availability.remaining}
+    if availability.closed_reason is not None:
+        result["closed"] = True
+        result["reason"] = availability.closed_reason
+    return result
 
 
 async def create_reservation(

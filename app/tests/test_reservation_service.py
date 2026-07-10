@@ -1,12 +1,16 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from app.core.config import get_settings
 from app.db.models import CapacityLimit, Customer
 from app.services import reservation_service
 
 pytestmark = pytest.mark.asyncio
+
+NZ = ZoneInfo(get_settings().restaurant_timezone)
 
 
 async def _make_customer(db, phone="+6421000000"):
@@ -18,7 +22,7 @@ async def _make_customer(db, phone="+6421000000"):
 
 async def test_create_reservation_succeeds(db_session):
     customer = await _make_customer(db_session)
-    starts_at = datetime(2026, 8, 1, 19, 0, tzinfo=timezone.utc)
+    starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner
 
     reservation = await reservation_service.create_reservation(
         db_session, customer_id=customer.id, party_size=2, starts_at=starts_at
@@ -31,7 +35,7 @@ async def test_create_reservation_succeeds(db_session):
 
 async def test_create_reservation_stores_special_requests(db_session):
     customer = await _make_customer(db_session)
-    starts_at = datetime(2026, 8, 1, 19, 0, tzinfo=timezone.utc)
+    starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner
 
     reservation = await reservation_service.create_reservation(
         db_session,
@@ -47,7 +51,7 @@ async def test_create_reservation_stores_special_requests(db_session):
 
 async def test_capacity_limit_window_is_enforced(db_session):
     customer = await _make_customer(db_session)
-    starts_at = datetime(2026, 8, 1, 19, 0, tzinfo=timezone.utc)
+    starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner
     db_session.add(
         CapacityLimit(
             starts_at=starts_at - timedelta(hours=1),
@@ -71,7 +75,7 @@ async def test_capacity_limit_window_is_enforced(db_session):
 
 async def test_check_availability_reflects_seated_count(db_session):
     customer = await _make_customer(db_session)
-    starts_at = datetime(2026, 8, 1, 19, 0, tzinfo=timezone.utc)
+    starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner
     db_session.add(
         CapacityLimit(
             starts_at=starts_at - timedelta(hours=1),
@@ -94,9 +98,50 @@ async def test_check_availability_reflects_seated_count(db_session):
     assert not availability.available
 
 
+def test_closed_reason_covers_opening_hours_rules():
+    # 2026-08-02 is a Sunday, 2026-08-03 a Monday, 2026-08-01 a Saturday.
+    sunday = datetime(2026, 8, 2, 19, 0, tzinfo=NZ)
+    assert "Sunday" in reservation_service.closed_reason(sunday)
+
+    weekday_break = datetime(2026, 8, 3, 15, 0, tzinfo=NZ)
+    assert "closed between" in reservation_service.closed_reason(weekday_break)
+    break_start_edge = datetime(2026, 8, 3, 14, 15, tzinfo=NZ)
+    assert reservation_service.closed_reason(break_start_edge) is not None
+    reopen_edge = datetime(2026, 8, 3, 17, 0, tzinfo=NZ)
+    assert reservation_service.closed_reason(reopen_edge) is None
+
+    too_late = datetime(2026, 8, 3, 21, 0, tzinfo=NZ)
+    assert "last booking" in reservation_service.closed_reason(too_late)
+    last_slot = datetime(2026, 8, 3, 20, 45, tzinfo=NZ)
+    assert reservation_service.closed_reason(last_slot) is None
+
+    # Saturday has no weekday break, but the last-booking cutoff still applies.
+    saturday_afternoon = datetime(2026, 8, 1, 15, 0, tzinfo=NZ)
+    assert reservation_service.closed_reason(saturday_afternoon) is None
+    saturday_late = datetime(2026, 8, 1, 22, 0, tzinfo=NZ)
+    assert "last booking" in reservation_service.closed_reason(saturday_late)
+
+
+async def test_create_reservation_refused_when_closed(db_session):
+    customer = await _make_customer(db_session)
+    sunday = datetime(2026, 8, 2, 19, 0, tzinfo=NZ)
+
+    with pytest.raises(reservation_service.ReservationConflict, match="Sunday"):
+        await reservation_service.create_reservation(
+            db_session, customer_id=customer.id, party_size=2, starts_at=sunday
+        )
+
+
+async def test_check_availability_reports_closed(db_session):
+    weekday_break = datetime(2026, 8, 3, 14, 30, tzinfo=NZ)
+    availability = await reservation_service.check_availability(db_session, weekday_break, party_size=2)
+    assert not availability.available
+    assert "closed between" in availability.closed_reason
+
+
 async def test_cancel_reservation_requires_matching_phone_number(db_session):
     customer = await _make_customer(db_session, phone="+6421111111")
-    starts_at = datetime(2026, 8, 1, 19, 0, tzinfo=timezone.utc)
+    starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner
 
     reservation = await reservation_service.create_reservation(
         db_session, customer_id=customer.id, party_size=2, starts_at=starts_at
@@ -120,7 +165,7 @@ async def test_concurrent_creates_do_not_oversell_capacity(db_session):
     from sqlalchemy.ext.asyncio import async_sessionmaker
 
     customer = await _make_customer(db_session)
-    starts_at = datetime(2026, 8, 1, 20, 0, tzinfo=timezone.utc)
+    starts_at = datetime(2026, 8, 3, 20, 0, tzinfo=NZ)  # Monday dinner
     db_session.add(
         CapacityLimit(
             starts_at=starts_at - timedelta(hours=1),
