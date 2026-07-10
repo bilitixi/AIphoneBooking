@@ -82,7 +82,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "escalate_to_staff",
-        "description": "Transfer the live call to a human staff member — use after repeated failed attempts or if the caller explicitly asks for a person.",
+        "description": "Transfer the live call to a human staff member — use immediately if your first attempt to help fails, or if the caller explicitly asks for a person.",
         "input_schema": {"type": "object", "properties": {"reason": {"type": "string"}}, "required": ["reason"]},
     },
 ]
