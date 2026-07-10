@@ -103,23 +103,30 @@ def test_closed_reason_covers_opening_hours_rules():
     sunday = datetime(2026, 8, 2, 19, 0, tzinfo=NZ)
     assert "Sunday" in reservation_service.closed_reason(sunday)
 
-    weekday_break = datetime(2026, 8, 3, 15, 0, tzinfo=NZ)
-    assert "closed between" in reservation_service.closed_reason(weekday_break)
-    break_start_edge = datetime(2026, 8, 3, 14, 15, tzinfo=NZ)
-    assert reservation_service.closed_reason(break_start_edge) is not None
-    reopen_edge = datetime(2026, 8, 3, 17, 0, tzinfo=NZ)
-    assert reservation_service.closed_reason(reopen_edge) is None
+    # Before lunch service opens.
+    early = datetime(2026, 8, 3, 9, 30, tzinfo=NZ)
+    assert "opens for lunch" in reservation_service.closed_reason(early)
 
-    too_late = datetime(2026, 8, 3, 21, 0, tzinfo=NZ)
-    assert "last booking" in reservation_service.closed_reason(too_late)
-    last_slot = datetime(2026, 8, 3, 20, 45, tzinfo=NZ)
-    assert reservation_service.closed_reason(last_slot) is None
+    # Lunch window: 11:00 AM up to (not including) 2:30 PM.
+    assert reservation_service.closed_reason(datetime(2026, 8, 3, 11, 0, tzinfo=NZ)) is None
+    assert reservation_service.closed_reason(datetime(2026, 8, 3, 14, 0, tzinfo=NZ)) is None
+    assert "between lunch and dinner" in reservation_service.closed_reason(
+        datetime(2026, 8, 3, 14, 30, tzinfo=NZ)
+    )
+    assert "between lunch and dinner" in reservation_service.closed_reason(
+        datetime(2026, 8, 3, 15, 0, tzinfo=NZ)
+    )
 
-    # Saturday has no weekday break, but the last-booking cutoff still applies.
-    saturday_afternoon = datetime(2026, 8, 1, 15, 0, tzinfo=NZ)
-    assert reservation_service.closed_reason(saturday_afternoon) is None
-    saturday_late = datetime(2026, 8, 1, 22, 0, tzinfo=NZ)
-    assert "last booking" in reservation_service.closed_reason(saturday_late)
+    # Dinner window: 5:00 PM through the 8:45 PM last booking.
+    assert reservation_service.closed_reason(datetime(2026, 8, 3, 17, 0, tzinfo=NZ)) is None
+    assert reservation_service.closed_reason(datetime(2026, 8, 3, 20, 45, tzinfo=NZ)) is None
+    assert "last booking" in reservation_service.closed_reason(datetime(2026, 8, 3, 21, 0, tzinfo=NZ))
+
+    # Service windows apply on Saturdays too.
+    assert "between lunch and dinner" in reservation_service.closed_reason(
+        datetime(2026, 8, 1, 15, 0, tzinfo=NZ)
+    )
+    assert reservation_service.closed_reason(datetime(2026, 8, 1, 12, 0, tzinfo=NZ)) is None
 
 
 async def test_create_reservation_refused_when_closed(db_session):
@@ -179,6 +186,24 @@ async def test_modify_reservation_updates_special_requests(db_session):
     )
     await db_session.commit()
     assert updated.special_requests == "Table upstairs please"
+
+
+async def test_get_or_create_customer_records_and_updates_name(db_session):
+    from app.services import customer_service
+
+    created = await customer_service.get_or_create_customer(
+        db_session, "+6421555555", full_name="Alex Chen"
+    )
+    assert created.full_name == "Alex Chen"
+
+    updated = await customer_service.get_or_create_customer(
+        db_session, "+6421555555", full_name="Alexandra Chen"
+    )
+    assert updated.id == created.id
+    assert updated.full_name == "Alexandra Chen"
+
+    unchanged = await customer_service.get_or_create_customer(db_session, "+6421555555")
+    assert unchanged.full_name == "Alexandra Chen"
 
 
 async def test_cancel_reservation_requires_matching_phone_number(db_session):

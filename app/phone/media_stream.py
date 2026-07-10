@@ -9,18 +9,13 @@ from twilio.rest import Client as TwilioClient
 
 from app.ai.reservation_agent import TOOL_FILLER, EndCall, Escalate, run_turn
 from app.core.config import get_settings
-from app.db.models import CallLog, PhoneCall
+from app.db.models import PhoneCall
 from app.db.session import async_session_factory
 from app.voice.synthesizer import create_synthesizer
 from app.voice.transcriber import create_transcriber
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-async def _log(db, call_id, role: str, content: str, tool_name: str | None = None) -> None:
-    db.add(CallLog(call_id=call_id, role=role, content=content, tool_name=tool_name))
-    await db.commit()
 
 
 GREETING = (
@@ -112,7 +107,7 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
         # Not seeded into `conversation`: the Anthropic Messages API requires
         # the first message to have role "user", so an assistant-authored
         # greeting can't lead the history — it's spoken and logged only.
-        await _log(db, call.id, "agent", GREETING)
+        logger.info("agent [%s]: %s", call_sid, GREETING)
         await _speak(websocket, synthesizer, stream_sid, GREETING)
 
         # Resolved by the main receive loop when Twilio reports our mark has
@@ -136,7 +131,7 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
         async def handle_transcripts():
             nonlocal conversation
             async for transcript in transcriber.finalized_transcripts():
-                await _log(db, call.id, "caller", transcript)
+                logger.info("caller [%s]: %s", call_sid, transcript)
                 conversation.append({"role": "user", "content": transcript})
 
                 try:
@@ -149,7 +144,7 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     # The agent's own handoff explanation was already streamed
                     # via speak_text; let it finish playing before Twilio
                     # replaces the call with the <Dial> transfer.
-                    await _log(db, call.id, "agent", f"[escalating: {esc.reason}]")
+                    logger.info("agent [%s]: escalating: %s", call_sid, esc.reason)
                     call.outcome = "escalated_to_staff"
                     await db.commit()
                     await wait_until_played()
@@ -158,7 +153,7 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                 except EndCall:
                     # The goodbye was already streamed via speak_text; don't
                     # hang up until the caller has heard it.
-                    await _log(db, call.id, "agent", "[call ended by agent]")
+                    logger.info("agent [%s]: call ended by agent", call_sid)
                     call.outcome = call.outcome or "handled_by_ai"
                     await db.commit()
                     await wait_until_played()
@@ -166,7 +161,6 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     return
                 except Exception:
                     logger.exception("Unhandled error running turn for %s", caller_phone_number)
-                    await _log(db, call.id, "agent", "[error: unhandled exception during turn]")
                     call.outcome = "escalated_to_staff"
                     await db.commit()
                     await _speak(
@@ -179,7 +173,7 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     await _escalate_call(call_sid)
                     return
 
-                await _log(db, call.id, "agent", reply)
+                logger.info("agent [%s]: %s", call_sid, reply)
 
         transcript_task = asyncio.create_task(handle_transcripts())
 

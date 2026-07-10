@@ -14,6 +14,9 @@ async def get_or_create_customer(
 ) -> Customer:
     customer = await find_customer(db, phone_number)
     if customer is not None:
+        if full_name:
+            customer.full_name = full_name
+            await db.flush()
         return customer
 
     customer = Customer(phone_number=phone_number, full_name=full_name)

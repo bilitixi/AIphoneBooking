@@ -51,7 +51,9 @@ pytest
   `special_requests`.
 - Opening hours are enforced in `reservation_service.closed_reason` and
   configured via env: closed all day on `RESTAURANT_CLOSED_DAYS` (default
-  sunday), closed on weekdays between `RESTAURANT_WEEKDAY_BREAK_START` and
-  `RESTAURANT_WEEKDAY_BREAK_END` (default 14:15-17:00), and no bookings
-  starting after `RESTAURANT_LAST_BOOKING` (default 20:45). The agent knows
-  these hours and apologizes instead of booking.
+  sunday); bookings must start within lunch (`RESTAURANT_LUNCH_OPEN`-
+  `RESTAURANT_LUNCH_CLOSE`, default 11:00-14:30) or dinner
+  (`RESTAURANT_DINNER_OPEN` through `RESTAURANT_LAST_BOOKING`, default
+  17:00-20:45). The agent knows these hours and apologizes instead of
+  booking. It also knows upstairs seating is dinner-only and asks for the
+  caller's name (stored on the customer record) before booking.

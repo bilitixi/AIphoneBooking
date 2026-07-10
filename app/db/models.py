@@ -82,18 +82,3 @@ class PhoneCall(Base):
     outcome: Mapped[str | None]
     started_at: Mapped[datetime] = mapped_column(server_default=func.now())
     ended_at: Mapped[datetime | None]
-
-    logs: Mapped[list["CallLog"]] = relationship(back_populates="call")
-
-
-class CallLog(Base):
-    __tablename__ = "call_logs"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    call_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("phone_calls.id", ondelete="CASCADE"))
-    role: Mapped[str] = mapped_column(nullable=False)  # caller | agent | tool
-    content: Mapped[str] = mapped_column(nullable=False)
-    tool_name: Mapped[str | None]
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-    call: Mapped["PhoneCall"] = relationship(back_populates="logs")
