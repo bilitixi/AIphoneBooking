@@ -128,11 +128,18 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
             except asyncio.TimeoutError:
                 logger.warning("Never got playback mark for %s; proceeding anyway", call_sid)
 
+        response_delay_seconds = get_settings().agent_response_delay_ms / 1000
+
         async def handle_transcripts():
             nonlocal conversation
             async for transcript in transcriber.finalized_transcripts():
                 logger.info("caller [%s]: %s", call_sid, transcript)
                 conversation.append({"role": "user", "content": transcript})
+
+                # Deliberate pause so the agent doesn't reply the instant the
+                # caller stops talking — makes the turn-taking feel natural
+                # instead of rushed, independent of how fast Claude/TTS are.
+                await asyncio.sleep(response_delay_seconds)
 
                 try:
                     # run_turn speaks each sentence via speak_text as soon as

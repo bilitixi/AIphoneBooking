@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     stt_provider: str = "deepgram"
     deepgram_api_key: str = ""
     assemblyai_api_key: str = ""
+    # How long Deepgram waits for more speech before finalizing an utterance.
+    # Higher = fewer premature cutoffs when the caller pauses mid-sentence,
+    # but a slightly slower reaction once they actually stop talking.
+    deepgram_endpointing_ms: int = 500
+    # Deliberate pause after the caller finishes speaking before the agent
+    # starts replying, so responses don't feel instant/rushed.
+    agent_response_delay_ms: int = 500
 
     tts_provider: str = "elevenlabs"
     elevenlabs_api_key: str = ""
