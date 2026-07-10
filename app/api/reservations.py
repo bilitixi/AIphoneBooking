@@ -4,11 +4,11 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.security import require_admin_user
+from app.core.security import require_admin_user, require_manager
 from app.db.models import Reservation
 from app.db.session import get_db
 from app.services import reservation_service
@@ -123,3 +123,27 @@ async def cancel_reservation(reservation_id: UUID, db: AsyncSession = Depends(ge
         raise HTTPException(status_code=404, detail="Reservation not found")
     await db.commit()
     return reservation
+
+
+@router.delete("", status_code=204, dependencies=[Depends(require_manager)])
+async def delete_reservations(
+    reservation_id: UUID | None = Query(None, description="Permanently delete only this reservation"),
+    confirm: bool = Query(
+        False, description="Must be true to permanently delete ALL reservations when reservation_id is omitted"
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Manager-only hard delete — permanently removes rows, unlike the \
+    cancel endpoint above which just marks status='cancelled'."""
+    if reservation_id is not None:
+        result = await db.execute(delete(Reservation).where(Reservation.id == reservation_id))
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Reservation not found")
+    else:
+        if not confirm:
+            raise HTTPException(
+                status_code=400,
+                detail="Pass confirm=true to delete ALL reservations, or reservation_id to delete one",
+            )
+        await db.execute(delete(Reservation))
+    await db.commit()
