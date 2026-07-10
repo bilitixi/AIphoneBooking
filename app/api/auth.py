@@ -29,5 +29,5 @@ async def login(payload: LoginIn, db: AsyncSession = Depends(get_db)) -> TokenOu
     if not valid:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
 
-    token = create_access_token(subject=str(admin.id))
+    token = create_access_token(subject=str(admin.id), role=admin.role)
     return TokenOut(access_token=token)

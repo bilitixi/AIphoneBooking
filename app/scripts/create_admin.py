@@ -5,7 +5,9 @@ Usage:
 
 Prompts for the password (not taken as an argv to avoid shell history/ps
 leaking it). If the username already exists, updates its password instead
-of creating a duplicate.
+of creating a duplicate. Always creates with role=manager — this is the
+bootstrap path for the first admin(s); managers create staff accounts
+(and other managers) afterwards through POST /api/admin-users.
 """
 import asyncio
 import getpass
@@ -24,7 +26,7 @@ async def create_admin(username: str, password: str) -> None:
         admin = result.scalar_one_or_none()
 
         if admin is None:
-            admin = AdminUser(username=username, password_hash=hash_password(password))
+            admin = AdminUser(username=username, password_hash=hash_password(password), role="manager")
             db.add(admin)
             action = "Created"
         else:

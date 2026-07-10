@@ -14,16 +14,24 @@ All `/api/*` routes except `/api/auth/login` require a JWT bearer token.
 ### Setup
 
 Admin accounts live in the `admin_users` table (not env vars), so more than
-one person can have their own login. Run migrations, then create an admin:
+one person can have their own login. Each account has a `role`:
+
+- **manager** — full access, and can create/list/update other admin_users.
+- **staff** — full access to `/api/reservations`, `/api/customers`,
+  `/api/capacity-limits`, `/api/calls`; gets `403` on `/api/admin-users`.
+
+Bootstrap the first (manager) account via CLI, then create the rest through
+the API:
 
 ```bash
 alembic upgrade head
-python -m app.scripts.create_admin <username>   # prompts for a password
+python -m app.scripts.create_admin <username>   # always role=manager, prompts for a password
 ```
 
 Run the script again with an existing username to reset that admin's
-password. There's no self-service signup or "create admin" HTTP endpoint —
-new admins are provisioned this way, by whoever has shell/DB access.
+password. There's no self-service signup — the CLI is only for bootstrapping
+the first manager; after that, managers create accounts via
+`POST /api/admin-users`.
 
 ### `POST /api/auth/login`
 
@@ -55,6 +63,49 @@ Authorization: Bearer <access_token>
 ```
 
 Missing or invalid tokens get `401 Unauthorized`.
+
+---
+
+## Admin users — `/api/admin-users`
+
+**Manager role required for every route here** — a `staff` token gets `403`.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/admin-users` | List all admin accounts |
+| POST | `/api/admin-users` | Create a new admin account |
+| PATCH | `/api/admin-users/{id}` | Change role or activate/deactivate |
+
+### Object shape
+
+```json
+{
+  "id": "uuid",
+  "username": "jane",
+  "role": "staff",
+  "is_active": true
+}
+```
+
+### `POST /api/admin-users`
+
+```json
+{ "username": "jane", "password": "at-least-8-chars", "role": "staff" }
+```
+
+`role` is `"manager"` or `"staff"` (defaults to `"staff"` if omitted). `201`
+with the created account. `409` if the username is taken, `422` for an
+invalid role.
+
+### `PATCH /api/admin-users/{id}`
+
+All fields optional.
+
+```json
+{ "role": "manager", "is_active": false }
+```
+
+`404` if not found, `422` for an invalid role.
 
 ---
 
