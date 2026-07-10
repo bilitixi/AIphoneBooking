@@ -115,12 +115,23 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
         await _log(db, call.id, "agent", GREETING)
         await _speak(websocket, synthesizer, stream_sid, GREETING)
 
-        # Resolved by the main receive loop when Twilio reports our "goodbye"
-        # mark has played — i.e. the caller has actually heard the farewell.
-        goodbye_played: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        # Resolved by the main receive loop when Twilio reports our mark has
+        # played — i.e. the caller has actually heard everything sent so far.
+        playback_done: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
 
         async def speak_text(text: str) -> None:
             await _speak(websocket, synthesizer, stream_sid, text)
+
+        async def wait_until_played() -> None:
+            """Blocks until all audio queued so far has played to the caller,
+            so hangups/transfers never cut the agent off mid-sentence."""
+            await websocket.send_text(
+                json.dumps({"event": "mark", "streamSid": stream_sid, "mark": {"name": "flush"}})
+            )
+            try:
+                await asyncio.wait_for(asyncio.shield(playback_done), timeout=20)
+            except asyncio.TimeoutError:
+                logger.warning("Never got playback mark for %s; proceeding anyway", call_sid)
 
         async def handle_transcripts():
             nonlocal conversation
@@ -135,27 +146,22 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                         db, caller_phone_number, conversation, on_text=speak_text
                     )
                 except Escalate as esc:
+                    # The agent's own handoff explanation was already streamed
+                    # via speak_text; let it finish playing before Twilio
+                    # replaces the call with the <Dial> transfer.
                     await _log(db, call.id, "agent", f"[escalating: {esc.reason}]")
                     call.outcome = "escalated_to_staff"
                     await db.commit()
+                    await wait_until_played()
                     await _escalate_call(call_sid)
                     return
                 except EndCall:
-                    # The goodbye was already streamed via speak_text; ask
-                    # Twilio to tell us when playback reaches this point so we
-                    # don't hang up mid-sentence.
+                    # The goodbye was already streamed via speak_text; don't
+                    # hang up until the caller has heard it.
                     await _log(db, call.id, "agent", "[call ended by agent]")
                     call.outcome = call.outcome or "handled_by_ai"
                     await db.commit()
-                    await websocket.send_text(
-                        json.dumps(
-                            {"event": "mark", "streamSid": stream_sid, "mark": {"name": "goodbye"}}
-                        )
-                    )
-                    try:
-                        await asyncio.wait_for(asyncio.shield(goodbye_played), timeout=20)
-                    except asyncio.TimeoutError:
-                        logger.warning("Never got goodbye mark for %s; hanging up anyway", call_sid)
+                    await wait_until_played()
                     await _hangup_call(call_sid)
                     return
                 except Exception:
@@ -169,6 +175,7 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                         stream_sid,
                         "Sorry, I'm having trouble with that. Let me connect you with a team member.",
                     )
+                    await wait_until_played()
                     await _escalate_call(call_sid)
                     return
 
@@ -186,8 +193,8 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     audio = base64.b64decode(message["media"]["payload"])
                     await transcriber.send_audio(audio)
                 elif event == "mark":
-                    if not goodbye_played.done():
-                        goodbye_played.set_result(True)
+                    if not playback_done.done():
+                        playback_done.set_result(True)
                 elif event == "stop":
                     call.outcome = call.outcome or "handled_by_ai"
                     await db.commit()
