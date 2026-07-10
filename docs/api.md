@@ -13,11 +13,17 @@ All `/api/*` routes except `/api/auth/login` require a JWT bearer token.
 
 ### Setup
 
-Set `ADMIN_USERNAME` and `ADMIN_PASSWORD_HASH` in `.env`. Generate the hash with:
+Admin accounts live in the `admin_users` table (not env vars), so more than
+one person can have their own login. Run migrations, then create an admin:
 
 ```bash
-python -c "from app.core.security import hash_password; print(hash_password('your-password'))"
+alembic upgrade head
+python -m app.scripts.create_admin <username>   # prompts for a password
 ```
+
+Run the script again with an existing username to reset that admin's
+password. There's no self-service signup or "create admin" HTTP endpoint —
+new admins are provisioned this way, by whoever has shell/DB access.
 
 ### `POST /api/auth/login`
 
@@ -35,7 +41,7 @@ No auth required.
 { "access_token": "eyJhbGciOi...", "token_type": "bearer" }
 ```
 
-`401` if the username/password don't match.
+`401` if the username/password don't match, or the account is inactive.
 
 Tokens expire after `ACCESS_TOKEN_EXPIRE_MINUTES` (default 60). There is no
 refresh endpoint — re-login once the token expires.

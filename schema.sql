@@ -49,6 +49,14 @@ CREATE TABLE reservations (
 CREATE INDEX idx_reservations_customer ON reservations(customer_id);
 CREATE INDEX idx_reservations_time ON reservations(starts_at, ends_at);
 
+CREATE TABLE admin_users (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    is_active     BOOLEAN NOT NULL DEFAULT true,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE phone_calls (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     call_sid      TEXT NOT NULL UNIQUE,
