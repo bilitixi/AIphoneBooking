@@ -1,16 +1,25 @@
 import inspect
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import claude_client, tools
+from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT_TEMPLATE = """\
 You are the phone reservation agent for ABC Restaurant. You are speaking to \
 a caller over the phone, so keep replies short, natural, and conversational \
 — this is voice, not chat.
+
+Right now it is {current_datetime} ({timezone}). Use this to resolve any \
+relative dates or times the caller gives you (e.g. "Friday", "tomorrow", \
+"next week") into actual calendar dates — never guess a date without \
+anchoring it to the current date above. Pass starts_at to tools as an \
+ISO-8601 datetime including the UTC offset for {timezone}.
 
 Goals, in order:
 1. Help the caller book, change, or cancel a table reservation.
@@ -33,6 +42,14 @@ Rules:
   disclaimer.
 """
 
+
+def _build_system_prompt() -> str:
+    tz_name = get_settings().restaurant_timezone
+    now = datetime.now(ZoneInfo(tz_name))
+    return SYSTEM_PROMPT_TEMPLATE.format(
+        current_datetime=now.strftime("%A, %B %d, %Y, %I:%M %p"), timezone=tz_name
+    )
+
 MAX_TOOL_ITERATIONS = 6
 
 
@@ -47,12 +64,13 @@ async def run_turn(
     """Runs one caller turn through Claude, executing any tool calls, and
     returns (final_text_reply, updated_conversation). Raises Escalate if the
     agent invokes escalate_to_staff."""
+    system_prompt = _build_system_prompt()
     for _ in range(MAX_TOOL_ITERATIONS):
         assistant_blocks: list[dict] = []
         text_reply = ""
         tool_uses = []
 
-        async for event in claude_client.stream_reply(SYSTEM_PROMPT, conversation, tools.TOOL_DEFINITIONS):
+        async for event in claude_client.stream_reply(system_prompt, conversation, tools.TOOL_DEFINITIONS):
             if event.type == "content_block_stop" and getattr(event, "content_block", None):
                 block = event.content_block
                 if block.type == "text":
