@@ -22,13 +22,16 @@ async def incoming_call(
 
     settings = get_settings()
     vr = VoiceResponse()
-    vr.say(
+    # The prompt is said *inside* the Gather (rather than before it) so digit
+    # collection starts as soon as the prompt begins — pressing 1 or 2 cuts
+    # the announcement off immediately instead of waiting for it to finish.
+    gather = Gather(num_digits=1, action=f"{settings.public_base_url}/phone/gather", method="POST")
+    gather.say(
         "Welcome to ABC Restaurant. This call may be recorded for quality "
         "purposes. For ordering takeaway, booking for a large group, or "
         "talking with our staff, press 1. To book a table, or change or "
         "cancel a reservation using our AI system, press 2."
     )
-    gather = Gather(num_digits=1, action=f"{settings.public_base_url}/phone/gather", method="POST")
     vr.append(gather)
     # If the caller doesn't press anything, repeat once via Twilio's default
     # re-prompt behavior (falls through and hangs up otherwise).
