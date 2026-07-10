@@ -28,16 +28,26 @@ class Customer(Base):
     reservations: Mapped[list["Reservation"]] = relationship(back_populates="customer")
 
 
-class RestaurantTable(Base):
-    __tablename__ = "restaurant_tables"
+class CapacityLimit(Base):
+    """A staff-defined window where the number of seated customers is capped
+    (e.g. reduced capacity for a private event). Outside any window, the
+    default capacity from settings applies. Overlapping windows: the lowest
+    cap wins."""
+
+    __tablename__ = "capacity_limits"
+    __table_args__ = (
+        CheckConstraint("max_customers >= 0", name="ck_capacity_limit_nonnegative"),
+        CheckConstraint("ends_at > starts_at", name="ck_capacity_limit_time_order"),
+        Index("idx_capacity_limits_time", "starts_at", "ends_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    label: Mapped[str] = mapped_column(nullable=False)
-    seats: Mapped[int] = mapped_column(nullable=False)
-    active: Mapped[bool] = mapped_column(default=True)
+    starts_at: Mapped[datetime] = mapped_column(nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(nullable=False)
+    max_customers: Mapped[int] = mapped_column(nullable=False)
+    note: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-    __table_args__ = (CheckConstraint("seats > 0", name="ck_table_seats_positive"),)
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
 
 class Reservation(Base):
@@ -45,14 +55,11 @@ class Reservation(Base):
     __table_args__ = (
         CheckConstraint("party_size > 0", name="ck_reservation_party_positive"),
         CheckConstraint("ends_at > starts_at", name="ck_reservation_time_order"),
-        Index("idx_reservations_table_time", "table_id", "starts_at"),
-        # The overlap-prevention EXCLUDE constraint lives in schema.sql / the
-        # Alembic migration — SQLAlchemy's ORM layer can't express EXCLUDE USING gist.
+        Index("idx_reservations_time", "starts_at", "ends_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"))
-    table_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("restaurant_tables.id", ondelete="RESTRICT"))
     party_size: Mapped[int] = mapped_column(nullable=False)
     starts_at: Mapped[datetime] = mapped_column(nullable=False)
     ends_at: Mapped[datetime] = mapped_column(nullable=False)
@@ -63,7 +70,6 @@ class Reservation(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     customer: Mapped["Customer"] = relationship(back_populates="reservations")
-    table: Mapped["RestaurantTable"] = relationship()
 
 
 class PhoneCall(Base):

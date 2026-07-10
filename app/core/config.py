@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     public_base_url: str = "http://localhost:8000"
     restaurant_timezone: str = "Pacific/Auckland"
+    # Max customers seated at once unless a capacity_limits row says otherwise.
+    restaurant_default_capacity: int = 50
 
     database_url: str
 

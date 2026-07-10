@@ -1,6 +1,4 @@
 -- ABC Restaurant — Postgres schema (Supabase)
--- Requires btree_gist for the exclusion constraint that prevents double-booking a table.
-CREATE EXTENSION IF NOT EXISTS btree_gist;
 CREATE EXTENSION IF NOT EXISTS pgcrypto; -- gen_random_uuid()
 
 CREATE TABLE customers (
@@ -13,18 +11,26 @@ CREATE TABLE customers (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE restaurant_tables (
+-- Staff-defined windows capping how many customers can be seated at once
+-- (e.g. reduced capacity for a private event). Outside any window, the
+-- default capacity from app settings (RESTAURANT_DEFAULT_CAPACITY) applies;
+-- when windows overlap, the lowest cap wins. Rows are managed through the
+-- admin API and can be altered at any time.
+CREATE TABLE capacity_limits (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    label         TEXT NOT NULL,          -- e.g. "T4", "Patio 2"
-    seats         INTEGER NOT NULL CHECK (seats > 0),
-    active        BOOLEAN NOT NULL DEFAULT true,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    starts_at     TIMESTAMPTZ NOT NULL,
+    ends_at       TIMESTAMPTZ NOT NULL CHECK (ends_at > starts_at),
+    max_customers INTEGER NOT NULL CHECK (max_customers >= 0),
+    note          TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_capacity_limits_time ON capacity_limits(starts_at, ends_at);
 
 CREATE TABLE reservations (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id     UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    table_id        UUID NOT NULL REFERENCES restaurant_tables(id) ON DELETE RESTRICT,
     party_size      INTEGER NOT NULL CHECK (party_size > 0),
     starts_at       TIMESTAMPTZ NOT NULL,
     ends_at         TIMESTAMPTZ NOT NULL CHECK (ends_at > starts_at),
@@ -34,18 +40,14 @@ CREATE TABLE reservations (
                         CHECK (source IN ('ai_call', 'staff_portal', 'takeaway_transfer')),
     special_requests TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-    -- Prevents two overlapping reservations on the same table at the DB level,
-    -- regardless of how many app workers are racing to insert.
-    EXCLUDE USING gist (
-        table_id WITH =,
-        tstzrange(starts_at, ends_at) WITH &&
-    ) WHERE (status = 'confirmed')
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Capacity (sum of party_size over overlapping confirmed reservations vs the
+-- effective limit) can't be enforced by a table constraint; writers serialize
+-- through pg_advisory_xact_lock in reservation_service instead.
 CREATE INDEX idx_reservations_customer ON reservations(customer_id);
-CREATE INDEX idx_reservations_table_time ON reservations(table_id, starts_at);
+CREATE INDEX idx_reservations_time ON reservations(starts_at, ends_at);
 
 CREATE TABLE phone_calls (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

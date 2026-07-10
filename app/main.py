@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api import call_logs, customers, reservations, tables
+from app.api import call_logs, capacity_limits, customers, reservations
 from app.core.logging import configure_logging
 from app.phone import incoming, ivr, media_stream
 
@@ -14,7 +14,7 @@ app.include_router(media_stream.router)
 
 app.include_router(reservations.router)
 app.include_router(customers.router)
-app.include_router(tables.router)
+app.include_router(capacity_limits.router)
 app.include_router(call_logs.router)
 
 

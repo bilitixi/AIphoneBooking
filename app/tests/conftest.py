@@ -13,7 +13,8 @@ from app.core.config import get_settings
 @pytest_asyncio.fixture
 async def db_session():
     """Integration fixture — requires a real Postgres reachable at
-    DATABASE_URL (btree_gist extension needs actual Postgres, not sqlite)."""
+    DATABASE_URL (the advisory-lock concurrency path needs actual Postgres,
+    not sqlite)."""
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
 
@@ -24,22 +25,9 @@ async def db_session():
         pytest.skip(f"Postgres not reachable at {settings.database_url}: {exc}")
 
     async with engine.begin() as conn:
-        await conn.execute(__import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
         await conn.execute(__import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-        await conn.execute(
-            __import__("sqlalchemy").text(
-                """
-                ALTER TABLE reservations
-                ADD CONSTRAINT excl_reservations_no_overlap
-                EXCLUDE USING gist (
-                    table_id WITH =,
-                    tstzrange(starts_at, ends_at) WITH &&
-                ) WHERE (status = 'confirmed')
-                """
-            )
-        )
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:

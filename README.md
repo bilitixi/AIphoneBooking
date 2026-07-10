@@ -12,16 +12,11 @@ pip install -r requirements.txt
 cp .env.example .env   # fill in Twilio / Anthropic / STT / TTS / DB creds
 ```
 
-Create the database, then run migrations (this includes seeding the starter
-floor plan — without rows in `restaurant_tables`, every availability check
-comes back empty and the agent reports "fully booked"):
+Create the database, then run migrations:
 
 ```bash
 alembic upgrade head
 ```
-
-`seed.sql` contains the same floor-plan seed for running directly with psql
-if you prefer (both are idempotent, so running both is harmless).
 
 Run the app:
 
@@ -44,6 +39,13 @@ pytest
   `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY`, and `ELEVENLABS_VOICE_ID` in
   `.env`. AssemblyAI/Cartesia are left as stubs if you want to prototype the
   alternative per design doc §7.1.
-- The reservation exclusion constraint (`schema.sql` / migration `0001`) is
-  the actual source of truth for preventing double-booking; app code only
-  reacts to it (`ReservationConflict`).
+- Booking is capacity-based, not table-based: a reservation fits if the sum
+  of overlapping confirmed party sizes plus the new party stays within the
+  effective capacity. That's `RESTAURANT_DEFAULT_CAPACITY` (env, default 50)
+  unless a staff-defined `capacity_limits` window overlaps the slot — manage
+  those via the `/api/capacity-limits` admin endpoints (lowest cap wins when
+  windows overlap). Writers serialize through a Postgres advisory lock in
+  `reservation_service`, so concurrent calls can't oversell the last seats.
+- The agent never asks callers to pick a table; it asks for any notes
+  (allergies, occasions) and stores them on the reservation as
+  `special_requests`.
