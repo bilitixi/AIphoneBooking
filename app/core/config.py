@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    # Comma-separated origins allowed to call /api/* from a browser (the
+    # admin frontend). Defaults cover common local dev servers plus the
+    # deployed admin frontend.
+    cors_allowed_origins: str = (
+        "http://localhost:3000,http://localhost:5173,https://senbookingadmin.vercel.app"
+    )
+
     notification_channels: str = "sms"  # comma-separated: sms,email
 
 

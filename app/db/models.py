@@ -72,6 +72,22 @@ class Reservation(Base):
     customer: Mapped["Customer"] = relationship(back_populates="reservations")
 
 
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+    __table_args__ = (
+        UniqueConstraint("username"),
+        CheckConstraint("role in ('manager', 'staff')", name="ck_admin_user_role"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username: Mapped[str] = mapped_column(nullable=False)
+    password_hash: Mapped[str] = mapped_column(nullable=False)
+    # "manager" can create other admin_users and assign roles; "staff" cannot.
+    role: Mapped[str] = mapped_column(default="manager")
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class PhoneCall(Base):
     __tablename__ = "phone_calls"
 
