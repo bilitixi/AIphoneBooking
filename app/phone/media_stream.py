@@ -36,12 +36,25 @@ async def _escalate_call(call_sid: str) -> None:
 @router.websocket("/ws/reservation")
 async def reservation_media_stream(websocket: WebSocket) -> None:
     await websocket.accept()
-    call_sid = websocket.query_params.get("call_sid")
+
+    # Twilio Media Streams always sends a "start" event first, which carries
+    # the real CallSid — the query string on the <Stream url="..."> is not
+    # reliably forwarded by Twilio, so we can't trust query_params for this.
+    call_sid: str | None = None
+    stream_sid: str | None = None
+    while call_sid is None:
+        raw = await websocket.receive_text()
+        message = json.loads(raw)
+        if message.get("event") == "start":
+            call_sid = message["start"]["callSid"]
+            stream_sid = message["start"]["streamSid"]
+        elif message.get("event") == "stop":
+            await websocket.close(code=1008)
+            return
 
     transcriber = create_transcriber()
     synthesizer = create_synthesizer()
     conversation: list[dict] = []
-    stream_sid: str | None = None
 
     async with async_session_factory() as db:
         result = await db.execute(select(PhoneCall).where(PhoneCall.call_sid == call_sid))
@@ -88,9 +101,7 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                 message = json.loads(raw)
                 event = message.get("event")
 
-                if event == "start":
-                    stream_sid = message["start"]["streamSid"]
-                elif event == "media":
+                if event == "media":
                     audio = base64.b64decode(message["media"]["payload"])
                     await transcriber.send_audio(audio)
                 elif event == "stop":
