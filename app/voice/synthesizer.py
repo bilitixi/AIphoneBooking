@@ -15,6 +15,16 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Shared across requests so each reply doesn't pay a fresh TLS handshake.
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(timeout=30.0)
+    return _http_client
+
 
 class Synthesizer(ABC):
     @abstractmethod
@@ -41,17 +51,17 @@ class ElevenLabsSynthesizer(Synthesizer):
             "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            try:
-                async with client.stream(
-                    "POST", url, params=params, headers=headers, json=payload
-                ) as response:
-                    response.raise_for_status()
-                    async for chunk in response.aiter_bytes():
-                        if chunk:
-                            yield chunk
-            except httpx.HTTPError:
-                logger.exception("ElevenLabs TTS request failed")
+        client = _get_http_client()
+        try:
+            async with client.stream(
+                "POST", url, params=params, headers=headers, json=payload
+            ) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    if chunk:
+                        yield chunk
+        except httpx.HTTPError:
+            logger.exception("ElevenLabs TTS request failed")
 
 
 class CartesiaSynthesizer(Synthesizer):

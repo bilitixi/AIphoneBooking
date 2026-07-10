@@ -7,7 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from twilio.rest import Client as TwilioClient
 
-from app.ai.reservation_agent import Escalate, run_turn
+from app.ai.reservation_agent import TOOL_FILLER, Escalate, run_turn
 from app.core.config import get_settings
 from app.db.models import CallLog, PhoneCall
 from app.db.session import async_session_factory
@@ -28,18 +28,37 @@ GREETING = (
     "are you looking to book a table, or change or cancel an existing reservation?"
 )
 
+# Static phrases spoken on every call: synthesized once, then replayed from
+# memory so the caller doesn't wait on a TTS round-trip for canned audio.
+_CACHEABLE_PHRASES = {GREETING, TOOL_FILLER}
+_audio_cache: dict[str, list[bytes]] = {}
+
+
+async def _send_audio(websocket: WebSocket, stream_sid: str, audio_chunk: bytes) -> None:
+    await websocket.send_text(
+        json.dumps(
+            {
+                "event": "media",
+                "streamSid": stream_sid,
+                "media": {"payload": base64.b64encode(audio_chunk).decode()},
+            }
+        )
+    )
+
 
 async def _speak(websocket: WebSocket, synthesizer, stream_sid: str, text: str) -> None:
+    cached = _audio_cache.get(text)
+    if cached is not None:
+        for audio_chunk in cached:
+            await _send_audio(websocket, stream_sid, audio_chunk)
+        return
+
+    chunks: list[bytes] = []
     async for audio_chunk in synthesizer.stream(text):
-        await websocket.send_text(
-            json.dumps(
-                {
-                    "event": "media",
-                    "streamSid": stream_sid,
-                    "media": {"payload": base64.b64encode(audio_chunk).decode()},
-                }
-            )
-        )
+        chunks.append(audio_chunk)
+        await _send_audio(websocket, stream_sid, audio_chunk)
+    if text in _CACHEABLE_PHRASES and chunks:
+        _audio_cache[text] = chunks
 
 
 async def _escalate_call(call_sid: str) -> None:
@@ -90,6 +109,9 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
         await _log(db, call.id, "agent", GREETING)
         await _speak(websocket, synthesizer, stream_sid, GREETING)
 
+        async def speak_text(text: str) -> None:
+            await _speak(websocket, synthesizer, stream_sid, text)
+
         async def handle_transcripts():
             nonlocal conversation
             async for transcript in transcriber.finalized_transcripts():
@@ -97,7 +119,11 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                 conversation.append({"role": "user", "content": transcript})
 
                 try:
-                    reply, conversation = await run_turn(db, caller_phone_number, conversation)
+                    # run_turn speaks each sentence via speak_text as soon as
+                    # it's generated; the returned reply is logged, not spoken.
+                    reply, conversation = await run_turn(
+                        db, caller_phone_number, conversation, on_text=speak_text
+                    )
                 except Escalate as esc:
                     await _log(db, call.id, "agent", f"[escalating: {esc.reason}]")
                     call.outcome = "escalated_to_staff"
@@ -119,7 +145,6 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     return
 
                 await _log(db, call.id, "agent", reply)
-                await _speak(websocket, synthesizer, stream_sid, reply)
 
         transcript_task = asyncio.create_task(handle_transcripts())
 

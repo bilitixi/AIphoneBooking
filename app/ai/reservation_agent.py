@@ -1,5 +1,7 @@
 import inspect
 import logging
+import re
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -20,6 +22,11 @@ relative dates or times the caller gives you (e.g. "Friday", "tomorrow", \
 "next week") into actual calendar dates — never guess a date without \
 anchoring it to the current date above. Pass starts_at to tools as an \
 ISO-8601 datetime including the UTC offset for {timezone}.
+
+The caller is calling from {caller_phone_number} — this is already known \
+from caller ID, so never ask for their phone number. Reservations are \
+automatically tied to this number regardless of what you pass to the tools. \
+When calling find_customer or create_reservation, use this number directly.
 
 Goals, in order:
 1. Help the caller book, change, or cancel a table reservation.
@@ -43,14 +50,22 @@ Rules:
 """
 
 
-def _build_system_prompt() -> str:
+def _build_system_prompt(caller_phone_number: str) -> str:
     tz_name = get_settings().restaurant_timezone
     now = datetime.now(ZoneInfo(tz_name))
     return SYSTEM_PROMPT_TEMPLATE.format(
-        current_datetime=now.strftime("%A, %B %d, %Y, %I:%M %p"), timezone=tz_name
+        current_datetime=now.strftime("%A, %B %d, %Y, %I:%M %p"),
+        timezone=tz_name,
+        caller_phone_number=caller_phone_number,
     )
 
 MAX_TOOL_ITERATIONS = 6
+
+# Spoken while tools run if Claude called them without saying anything first,
+# so the caller isn't left in silence during the tool round-trip.
+TOOL_FILLER = "One moment, please."
+
+OnText = Callable[[str], Awaitable[None]]
 
 
 class Escalate(Exception):
@@ -58,20 +73,53 @@ class Escalate(Exception):
         self.reason = reason
 
 
+def _split_complete_sentences(buf: str) -> tuple[str, str]:
+    """Splits off text up to the last sentence boundary (., !, ? followed by
+    whitespace), returning (complete, remainder). Requiring trailing
+    whitespace keeps things like "6.30" intact."""
+    end = -1
+    for m in re.finditer(r"[.!?](?=\s)", buf):
+        end = m.end()
+    if end == -1:
+        return "", buf
+    return buf[:end], buf[end:]
+
+
 async def run_turn(
-    db: AsyncSession, caller_phone_number: str, conversation: list[dict]
+    db: AsyncSession,
+    caller_phone_number: str,
+    conversation: list[dict],
+    on_text: OnText | None = None,
 ) -> tuple[str, list[dict]]:
     """Runs one caller turn through Claude, executing any tool calls, and
     returns (final_text_reply, updated_conversation). Raises Escalate if the
-    agent invokes escalate_to_staff."""
-    system_prompt = _build_system_prompt()
+    agent invokes escalate_to_staff.
+
+    All caller-audible text is delivered through on_text as soon as each
+    sentence is complete — including text emitted before tool calls — so
+    speech synthesis can start while Claude is still generating. The returned
+    full text is for logging; callers using on_text must not speak it again."""
+    system_prompt = _build_system_prompt(caller_phone_number)
+    spoke_anything = False
+
     for _ in range(MAX_TOOL_ITERATIONS):
         assistant_blocks: list[dict] = []
         text_reply = ""
         tool_uses = []
+        sentence_buf = ""
 
         async for event in claude_client.stream_reply(system_prompt, conversation, tools.TOOL_DEFINITIONS):
-            if event.type == "content_block_stop" and getattr(event, "content_block", None):
+            if (
+                on_text
+                and event.type == "content_block_delta"
+                and getattr(event.delta, "type", None) == "text_delta"
+            ):
+                sentence_buf += event.delta.text
+                complete, sentence_buf = _split_complete_sentences(sentence_buf)
+                if complete.strip():
+                    spoke_anything = True
+                    await on_text(complete.strip())
+            elif event.type == "content_block_stop" and getattr(event, "content_block", None):
                 block = event.content_block
                 if block.type == "text":
                     text_reply += block.text
@@ -82,10 +130,18 @@ async def run_turn(
                         {"type": "tool_use", "id": block.id, "name": block.name, "input": block.input}
                     )
 
+        if on_text and sentence_buf.strip():
+            spoke_anything = True
+            await on_text(sentence_buf.strip())
+
         conversation.append({"role": "assistant", "content": assistant_blocks})
 
         if not tool_uses:
             return text_reply, conversation
+
+        if on_text and not spoke_anything:
+            await on_text(TOOL_FILLER)
+            spoke_anything = True
 
         tool_results = []
         for tool_use in tool_uses:
@@ -99,10 +155,10 @@ async def run_turn(
         conversation.append({"role": "user", "content": tool_results})
 
     logger.warning("Hit MAX_TOOL_ITERATIONS without a final reply for %s", caller_phone_number)
-    return (
-        "I'm having trouble completing that — let me connect you with someone who can help.",
-        conversation,
-    )
+    fallback = "I'm having trouble completing that — let me connect you with someone who can help."
+    if on_text:
+        await on_text(fallback)
+    return fallback, conversation
 
 
 async def _execute_tool(db: AsyncSession, caller_phone_number: str, name: str, tool_input: dict) -> dict:
