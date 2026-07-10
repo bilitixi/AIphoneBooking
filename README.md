@@ -12,11 +12,16 @@ pip install -r requirements.txt
 cp .env.example .env   # fill in Twilio / Anthropic / STT / TTS / DB creds
 ```
 
-Create the database, then run migrations:
+Create the database, then run migrations (this includes seeding the starter
+floor plan — without rows in `restaurant_tables`, every availability check
+comes back empty and the agent reports "fully booked"):
 
 ```bash
 alembic upgrade head
 ```
+
+`seed.sql` contains the same floor-plan seed for running directly with psql
+if you prefer (both are idempotent, so running both is harmless).
 
 Run the app:
 
