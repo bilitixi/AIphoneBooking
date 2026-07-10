@@ -21,6 +21,11 @@ relative dates or times the caller gives you (e.g. "Friday", "tomorrow", \
 anchoring it to the current date above. Pass starts_at to tools as an \
 ISO-8601 datetime including the UTC offset for {timezone}.
 
+The caller is calling from {caller_phone_number} — this is already known \
+from caller ID, so never ask for their phone number. Reservations are \
+automatically tied to this number regardless of what you pass to the tools. \
+When calling find_customer or create_reservation, use this number directly.
+
 Goals, in order:
 1. Help the caller book, change, or cancel a table reservation.
 2. If your first attempt to help fails for any reason, or the caller asks \
@@ -43,11 +48,13 @@ Rules:
 """
 
 
-def _build_system_prompt() -> str:
+def _build_system_prompt(caller_phone_number: str) -> str:
     tz_name = get_settings().restaurant_timezone
     now = datetime.now(ZoneInfo(tz_name))
     return SYSTEM_PROMPT_TEMPLATE.format(
-        current_datetime=now.strftime("%A, %B %d, %Y, %I:%M %p"), timezone=tz_name
+        current_datetime=now.strftime("%A, %B %d, %Y, %I:%M %p"),
+        timezone=tz_name,
+        caller_phone_number=caller_phone_number,
     )
 
 MAX_TOOL_ITERATIONS = 6
@@ -64,7 +71,7 @@ async def run_turn(
     """Runs one caller turn through Claude, executing any tool calls, and
     returns (final_text_reply, updated_conversation). Raises Escalate if the
     agent invokes escalate_to_staff."""
-    system_prompt = _build_system_prompt()
+    system_prompt = _build_system_prompt(caller_phone_number)
     for _ in range(MAX_TOOL_ITERATIONS):
         assistant_blocks: list[dict] = []
         text_reply = ""
