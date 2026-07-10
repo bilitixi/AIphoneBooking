@@ -32,7 +32,7 @@ async def gather(
 
     if Digits == "1":
         call.outcome = "transferred_to_staff"
-        vr.say("Connecting you to our team for takeaway orders.")
+        vr.say("Connecting you to our team for takeaway orders and large group bookings.")
         vr.dial(settings.twilio_staff_number)
     else:
         vr.say("Connecting you to our reservation assistant.")
