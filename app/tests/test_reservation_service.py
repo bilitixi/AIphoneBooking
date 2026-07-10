@@ -139,6 +139,48 @@ async def test_check_availability_reports_closed(db_session):
     assert "closed between" in availability.closed_reason
 
 
+async def test_list_upcoming_reservations_scoped_to_caller(db_session):
+    customer = await _make_customer(db_session, phone="+6421222222")
+    other = await _make_customer(db_session, phone="+6421333333")
+    starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner
+
+    mine = await reservation_service.create_reservation(
+        db_session, customer_id=customer.id, party_size=2, starts_at=starts_at
+    )
+    cancelled = await reservation_service.create_reservation(
+        db_session, customer_id=customer.id, party_size=2, starts_at=starts_at + timedelta(days=1)
+    )
+    await reservation_service.create_reservation(
+        db_session, customer_id=other.id, party_size=4, starts_at=starts_at
+    )
+    await db_session.commit()
+    await reservation_service.cancel_reservation(
+        db_session, reservation_id=cancelled.id, requesting_phone_number="+6421222222"
+    )
+    await db_session.commit()
+
+    found = await reservation_service.list_upcoming_reservations(db_session, "+6421222222")
+    assert [r.id for r in found] == [mine.id]
+
+
+async def test_modify_reservation_updates_special_requests(db_session):
+    customer = await _make_customer(db_session, phone="+6421444444")
+    starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner
+    reservation = await reservation_service.create_reservation(
+        db_session, customer_id=customer.id, party_size=2, starts_at=starts_at
+    )
+    await db_session.commit()
+
+    updated = await reservation_service.modify_reservation(
+        db_session,
+        reservation_id=reservation.id,
+        requesting_phone_number="+6421444444",
+        special_requests="Table upstairs please",
+    )
+    await db_session.commit()
+    assert updated.special_requests == "Table upstairs please"
+
+
 async def test_cancel_reservation_requires_matching_phone_number(db_session):
     customer = await _make_customer(db_session, phone="+6421111111")
     starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner

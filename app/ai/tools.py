@@ -57,8 +57,24 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "find_reservations",
+        "description": (
+            "List the caller's upcoming confirmed reservations. Always call "
+            "this before modify_reservation or cancel_reservation to get the "
+            "exact reservation_id — never guess or reuse IDs from elsewhere."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"phone_number": {"type": "string"}},
+            "required": ["phone_number"],
+        },
+    },
+    {
         "name": "modify_reservation",
-        "description": "Change an existing reservation belonging to the calling phone number.",
+        "description": (
+            "Change an existing reservation belonging to the calling phone "
+            "number. Use a reservation_id returned by find_reservations."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -66,6 +82,10 @@ TOOL_DEFINITIONS = [
                 "phone_number": {"type": "string"},
                 "starts_at": {"type": "string"},
                 "party_size": {"type": "integer"},
+                "special_requests": {
+                    "type": "string",
+                    "description": "Replacement notes for the reservation (allergies, occasions, seating preferences).",
+                },
             },
             "required": ["reservation_id", "phone_number"],
         },
@@ -146,12 +166,28 @@ async def create_reservation(
     return {"success": True, "reservation_id": str(reservation.id)}
 
 
+async def find_reservations(db: AsyncSession, phone_number: str) -> dict:
+    reservations = await reservation_service.list_upcoming_reservations(db, phone_number)
+    return {
+        "reservations": [
+            {
+                "reservation_id": str(r.id),
+                "starts_at": r.starts_at.isoformat(),
+                "party_size": r.party_size,
+                "special_requests": r.special_requests,
+            }
+            for r in reservations
+        ]
+    }
+
+
 async def modify_reservation(
     db: AsyncSession,
     reservation_id: str,
     phone_number: str,
     starts_at: str | None = None,
     party_size: int | None = None,
+    special_requests: str | None = None,
 ) -> dict:
     try:
         reservation = await reservation_service.modify_reservation(
@@ -160,6 +196,7 @@ async def modify_reservation(
             requesting_phone_number=phone_number,
             starts_at=datetime.fromisoformat(starts_at) if starts_at else None,
             party_size=party_size,
+            special_requests=special_requests,
         )
     except PermissionError:
         return {"success": False, "error": "No matching reservation found for this phone number."}
@@ -199,6 +236,7 @@ DISPATCH = {
     "find_customer": find_customer,
     "check_availability": check_availability,
     "create_reservation": create_reservation,
+    "find_reservations": find_reservations,
     "modify_reservation": modify_reservation,
     "cancel_reservation": cancel_reservation,
     "escalate_to_staff": escalate_to_staff,

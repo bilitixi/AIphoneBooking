@@ -165,6 +165,26 @@ async def create_reservation(
     return reservation
 
 
+async def list_upcoming_reservations(db: AsyncSession, phone_number: str) -> list[Reservation]:
+    """Upcoming confirmed reservations tied to the caller's phone number —
+    the agent uses this to find the right reservation_id for changes and
+    cancellations instead of guessing."""
+    from app.db.models import Customer  # local import to avoid a cycle at module load
+
+    now = datetime.now(ZoneInfo(get_settings().restaurant_timezone))
+    result = await db.execute(
+        select(Reservation)
+        .join(Customer, Reservation.customer_id == Customer.id)
+        .where(
+            Customer.phone_number == phone_number,
+            Reservation.status == "confirmed",
+            Reservation.ends_at > now,
+        )
+        .order_by(Reservation.starts_at)
+    )
+    return list(result.scalars().all())
+
+
 async def modify_reservation(
     db: AsyncSession,
     reservation_id: UUID,
