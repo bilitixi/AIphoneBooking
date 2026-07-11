@@ -33,6 +33,13 @@ pytest
 
 ## Notes
 
+- Reservations older than 7 days (by `starts_at`) are purged automatically:
+  the app starts a background task on boot (`app/core/cron.py`) that runs
+  the cleanup every 24 hours for as long as the uvicorn process is up, so no
+  external scheduler is required. If you'd rather run it from an OS-level
+  cron/CronJob instead, `python -m app.scripts.delete_old_reservations` does
+  the same cleanup as a one-shot command.
+
 - `app/voice/transcriber.py` (Deepgram) and `app/voice/synthesizer.py`
   (ElevenLabs) are wired up for real, using mulaw/8kHz in both directions so
   no audio transcoding is needed between Twilio and either vendor. Set

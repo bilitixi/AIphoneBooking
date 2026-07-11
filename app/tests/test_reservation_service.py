@@ -226,6 +226,35 @@ async def test_cancel_reservation_requires_matching_phone_number(db_session):
     assert cancelled.status == "cancelled"
 
 
+async def test_delete_stale_reservations_removes_only_old_ones(db_session):
+    from app.db.models import Reservation
+
+    customer = await _make_customer(db_session, phone="+6421666666")
+    now = datetime.now(NZ)
+
+    old = Reservation(
+        customer_id=customer.id,
+        party_size=2,
+        starts_at=now - timedelta(days=10),
+        ends_at=now - timedelta(days=10) + reservation_service.DEFAULT_SEATING_DURATION,
+    )
+    recent = Reservation(
+        customer_id=customer.id,
+        party_size=2,
+        starts_at=now + timedelta(days=1),
+        ends_at=now + timedelta(days=1) + reservation_service.DEFAULT_SEATING_DURATION,
+    )
+    db_session.add_all([old, recent])
+    await db_session.commit()
+
+    deleted = await reservation_service.delete_stale_reservations(db_session)
+    await db_session.commit()
+
+    assert deleted == 1
+    assert await db_session.get(Reservation, old.id) is None
+    assert await db_session.get(Reservation, recent.id) is not None
+
+
 async def test_concurrent_creates_do_not_oversell_capacity(db_session):
     """Two callers race for the last seats on separate DB connections — the
     advisory lock in _assert_capacity must serialize them so only one fits."""
