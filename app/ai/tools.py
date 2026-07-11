@@ -8,9 +8,11 @@ agent or the admin portal.
 
 from datetime import datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.services import customer_service, reservation_service
 
 TOOL_DEFINITIONS = [
@@ -169,12 +171,18 @@ async def create_reservation(
 
 
 async def find_reservations(db: AsyncSession, phone_number: str) -> dict:
+    """Returns starts_at in restaurant-local time with its UTC offset —
+    rows come back from the DB as UTC-aware datetimes (asyncpg normalizes
+    TIMESTAMPTZ to UTC), and handing that straight to the agent as
+    isoformat() previously made it misread booking times by the local UTC
+    offset (and sometimes the calendar day)."""
+    tz = ZoneInfo(get_settings().restaurant_timezone)
     reservations = await reservation_service.list_upcoming_reservations(db, phone_number)
     return {
         "reservations": [
             {
                 "reservation_id": str(r.id),
-                "starts_at": r.starts_at.isoformat(),
+                "starts_at": r.starts_at.astimezone(tz).isoformat(),
                 "party_size": r.party_size,
                 "special_requests": r.special_requests,
             }
