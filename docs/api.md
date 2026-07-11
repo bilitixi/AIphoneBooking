@@ -16,9 +16,12 @@ All `/api/*` routes except `/api/auth/login` require a JWT bearer token.
 Admin accounts live in the `admin_users` table (not env vars), so more than
 one person can have their own login. Each account has a `role`:
 
-- **manager** — full access, and can create/list/update other admin_users.
-- **staff** — full access to `/api/reservations`, `/api/customers`,
-  `/api/capacity-limits`, `/api/calls`; gets `403` on `/api/admin-users`.
+- **manager** — full access, including create/list/update other admin_users,
+  and every hard-delete endpoint (see each resource's section below).
+- **staff** — read/write access to `/api/reservations`, `/api/customers`,
+  `/api/capacity-limits`, `/api/calls`; gets `403` on `/api/admin-users` and
+  on every hard-delete route (`DELETE /api/reservations`, `/api/customers`,
+  `/api/calls`, and both `/api/capacity-limits` delete routes).
 
 Bootstrap the first (manager) account via CLI, then create the rest through
 the API:
@@ -129,6 +132,7 @@ to log in and manage accounts).
 | POST | `/api/reservations` | Create a reservation |
 | PATCH | `/api/reservations/{id}` | Update a reservation |
 | DELETE | `/api/reservations/{id}` | Cancel a reservation |
+| DELETE | `/api/reservations` | **Manager only.** Permanently delete one or all reservations |
 
 ### `GET /api/reservations` query params
 
@@ -192,6 +196,28 @@ All fields optional — only what's provided is changed.
 Cancels the reservation (sets `status`), returns the updated reservation
 object. `404` if not found.
 
+### `DELETE /api/reservations` — manager only
+
+Permanently deletes reservation row(s) — this is a hard delete, unlike
+`DELETE /api/reservations/{id}` above which just cancels. `staff` tokens get
+`403`.
+
+| Param | Type | Description |
+|---|---|---|
+| `reservation_id` | uuid | Delete only this reservation |
+| `confirm` | bool | Required (`true`) to delete **all** reservations when `reservation_id` is omitted |
+
+Examples:
+
+```
+DELETE /api/reservations?reservation_id=<uuid>      # delete one
+DELETE /api/reservations?confirm=true                # delete all
+```
+
+`204` on success. `404` if `reservation_id` doesn't match anything. `400` if
+neither `reservation_id` nor `confirm=true` is given (guards against an
+accidental full wipe).
+
 ---
 
 ## Customers — `/api/customers`
@@ -201,6 +227,7 @@ object. `404` if not found.
 | GET | `/api/customers` | List all customers, newest first |
 | GET | `/api/customers/{id}` | Get one customer |
 | PATCH | `/api/customers/{id}` | Update a customer |
+| DELETE | `/api/customers` | **Manager only.** Permanently delete one or all customers |
 
 ### Object shape
 
@@ -227,6 +254,26 @@ All fields optional.
 
 `404` if not found.
 
+### `DELETE /api/customers` — manager only
+
+Permanently deletes customer row(s). `staff` tokens get `403`. Deleting a
+customer cascades to their reservations (`ON DELETE CASCADE`).
+
+| Param | Type | Description |
+|---|---|---|
+| `customer_id` | uuid | Delete only this customer |
+| `confirm` | bool | Required (`true`) to delete **all** customers when `customer_id` is omitted |
+
+Examples:
+
+```
+DELETE /api/customers?customer_id=<uuid>      # delete one
+DELETE /api/customers?confirm=true             # delete all
+```
+
+`204` on success. `404` if `customer_id` doesn't match anything. `400` if
+neither `customer_id` nor `confirm=true` is given.
+
 ---
 
 ## Capacity limits — `/api/capacity-limits`
@@ -240,7 +287,8 @@ Overlapping windows: the lowest cap wins.
 | GET | `/api/capacity-limits` | List all limits, ordered by `starts_at` |
 | POST | `/api/capacity-limits` | Create a limit |
 | PATCH | `/api/capacity-limits/{id}` | Update a limit |
-| DELETE | `/api/capacity-limits/{id}` | Delete a limit |
+| DELETE | `/api/capacity-limits/{id}` | **Manager only.** Delete a limit |
+| DELETE | `/api/capacity-limits` | **Manager only.** Delete all limits |
 
 ### Object shape
 
@@ -271,19 +319,34 @@ Overlapping windows: the lowest cap wins.
 
 All fields optional. `404` if not found.
 
-### `DELETE /api/capacity-limits/{id}`
+### `DELETE /api/capacity-limits/{id}` — manager only
 
-`204` on success, `404` if not found.
+`staff` tokens get `403`. `204` on success, `404` if not found.
+
+### `DELETE /api/capacity-limits` — manager only
+
+Deletes **all** capacity limits. `staff` tokens get `403`.
+
+| Param | Type | Description |
+|---|---|---|
+| `confirm` | bool | Required (`true`) to proceed |
+
+```
+DELETE /api/capacity-limits?confirm=true
+```
+
+`204` on success. `400` if `confirm=true` isn't given.
 
 ---
 
 ## Calls — `/api/calls`
 
-Read-only log of inbound phone calls handled by the IVR/AI agent.
+Log of inbound phone calls handled by the IVR/AI agent.
 
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/calls` | List all calls, newest first |
+| DELETE | `/api/calls` | **Manager only.** Permanently delete one or all call records |
 
 ### Object shape
 
@@ -298,6 +361,25 @@ Read-only log of inbound phone calls handled by the IVR/AI agent.
   "ended_at": "2026-07-10T12:04:32+12:00"
 }
 ```
+
+### `DELETE /api/calls` — manager only
+
+Permanently deletes call log row(s). `staff` tokens get `403`.
+
+| Param | Type | Description |
+|---|---|---|
+| `call_id` | uuid | Delete only this call record |
+| `confirm` | bool | Required (`true`) to delete **all** call records when `call_id` is omitted |
+
+Examples:
+
+```
+DELETE /api/calls?call_id=<uuid>      # delete one
+DELETE /api/calls?confirm=true         # delete all
+```
+
+`204` on success. `404` if `call_id` doesn't match anything. `400` if
+neither `call_id` nor `confirm=true` is given.
 
 ---
 
