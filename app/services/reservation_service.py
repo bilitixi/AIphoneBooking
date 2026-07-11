@@ -3,13 +3,16 @@ from datetime import datetime, time, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.db.models import CapacityLimit, Reservation
 
 DEFAULT_SEATING_DURATION = timedelta(hours=2)
+
+# How far back reservations are kept before the cleanup cron purges them.
+RESERVATION_RETENTION = timedelta(days=7)
 
 # Serializes capacity checks + inserts across workers. Capacity is a SUM over
 # rows, which no unique/exclusion constraint can enforce, so writers take this
@@ -244,3 +247,12 @@ async def _get_reservation(
     if reservation is None:
         raise PermissionError("Reservation not found for this phone number")
     return reservation
+
+
+async def delete_stale_reservations(db: AsyncSession, retention: timedelta = RESERVATION_RETENTION) -> int:
+    """Permanently deletes reservations whose start time is older than
+    `retention` (default 7 days). Used by the daily cleanup cron; returns the
+    number of rows deleted."""
+    cutoff = datetime.now(ZoneInfo(get_settings().restaurant_timezone)) - retention
+    result = await db.execute(delete(Reservation).where(Reservation.starts_at < cutoff))
+    return result.rowcount
