@@ -15,6 +15,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.services import customer_service, reservation_service
 
+_DAY_NAME_DESCRIPTION = (
+    "The weekday name the caller said (e.g. 'Thursday'), matching the row "
+    "starts_at was read from in the calendar. Lets the backend catch a "
+    "misread of the calendar (e.g. picking the wrong row) before booking."
+)
+
+
+def _weekday_mismatch(starts_at: datetime, day_name: str | None) -> dict | None:
+    """Returns an error dict if starts_at doesn't actually fall on day_name,
+    else None. starts_at is checked in restaurant-local terms, since that's
+    the calendar the agent was given."""
+    if not day_name:
+        return None
+    tz = ZoneInfo(get_settings().restaurant_timezone)
+    local = starts_at.astimezone(tz) if starts_at.tzinfo else starts_at.replace(tzinfo=tz)
+    actual = local.strftime("%A")
+    if actual.lower() != day_name.strip().lower():
+        return {
+            "error": (
+                f"{starts_at.date().isoformat()} is a {actual}, not {day_name}. "
+                "Re-check the calendar in the system prompt and pass the date "
+                "from the row that actually has that weekday name."
+            )
+        }
+    return None
+
 TOOL_DEFINITIONS = [
     {
         "name": "find_customer",
@@ -33,6 +59,7 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "starts_at": {"type": "string", "description": "ISO-8601 datetime"},
                 "party_size": {"type": "integer"},
+                "day_name": {"type": "string", "description": _DAY_NAME_DESCRIPTION},
             },
             "required": ["starts_at", "party_size"],
         },
@@ -51,6 +78,7 @@ TOOL_DEFINITIONS = [
                 "customer_name": {"type": "string", "description": "The caller's name for the booking."},
                 "party_size": {"type": "integer"},
                 "starts_at": {"type": "string", "description": "ISO-8601 datetime"},
+                "day_name": {"type": "string", "description": _DAY_NAME_DESCRIPTION},
                 "special_requests": {
                     "type": "string",
                     "description": "Any notes the caller wants to leave (allergies, occasions, seating preferences).",
@@ -84,6 +112,7 @@ TOOL_DEFINITIONS = [
                 "reservation_id": {"type": "string"},
                 "phone_number": {"type": "string"},
                 "starts_at": {"type": "string"},
+                "day_name": {"type": "string", "description": _DAY_NAME_DESCRIPTION},
                 "party_size": {"type": "integer"},
                 "special_requests": {
                     "type": "string",
@@ -134,10 +163,15 @@ async def find_customer(db: AsyncSession, phone_number: str) -> dict:
     }
 
 
-async def check_availability(db: AsyncSession, starts_at: str, party_size: int) -> dict:
-    availability = await reservation_service.check_availability(
-        db, datetime.fromisoformat(starts_at), party_size
-    )
+async def check_availability(
+    db: AsyncSession, starts_at: str, party_size: int, day_name: str | None = None
+) -> dict:
+    parsed_starts_at = datetime.fromisoformat(starts_at)
+    mismatch = _weekday_mismatch(parsed_starts_at, day_name)
+    if mismatch is not None:
+        return mismatch
+
+    availability = await reservation_service.check_availability(db, parsed_starts_at, party_size)
     result = {"available": availability.available, "seats_remaining": availability.remaining}
     if availability.closed_reason is not None:
         result["closed"] = True
@@ -152,14 +186,20 @@ async def create_reservation(
     starts_at: str,
     customer_name: str | None = None,
     special_requests: str | None = None,
+    day_name: str | None = None,
 ) -> dict:
+    parsed_starts_at = datetime.fromisoformat(starts_at)
+    mismatch = _weekday_mismatch(parsed_starts_at, day_name)
+    if mismatch is not None:
+        return mismatch
+
     customer = await customer_service.get_or_create_customer(db, phone_number, full_name=customer_name)
     try:
         reservation = await reservation_service.create_reservation(
             db,
             customer_id=customer.id,
             party_size=party_size,
-            starts_at=datetime.fromisoformat(starts_at),
+            starts_at=parsed_starts_at,
             special_requests=special_requests,
         )
     except reservation_service.ReservationConflict as exc:
@@ -198,13 +238,20 @@ async def modify_reservation(
     starts_at: str | None = None,
     party_size: int | None = None,
     special_requests: str | None = None,
+    day_name: str | None = None,
 ) -> dict:
+    parsed_starts_at = datetime.fromisoformat(starts_at) if starts_at else None
+    if parsed_starts_at is not None:
+        mismatch = _weekday_mismatch(parsed_starts_at, day_name)
+        if mismatch is not None:
+            return mismatch
+
     try:
         reservation = await reservation_service.modify_reservation(
             db,
             reservation_id=UUID(reservation_id),
             requesting_phone_number=phone_number,
-            starts_at=datetime.fromisoformat(starts_at) if starts_at else None,
+            starts_at=parsed_starts_at,
             party_size=party_size,
             special_requests=special_requests,
         )
