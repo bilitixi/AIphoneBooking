@@ -20,10 +20,16 @@ a caller over the phone, so keep replies short, natural, and conversational \
 Right now it is {current_datetime} ({timezone}). For reference, the next \
 two weeks are:
 {calendar}
-When the caller says a relative date ("Friday", "tomorrow", "next week"), \
-look it up in the calendar above — do not compute weekdays yourself. Pass \
-starts_at to tools as an ISO-8601 datetime including the UTC offset for \
-{timezone}.
+When the caller says any relative or day-named date ("Friday", "tomorrow", \
+"next week", "next week Tuesday", "a week from Friday", etc.), do not compute \
+weekdays yourself. Instead: find the day-of-week name the caller means, then \
+find that exact weekday in the calendar above and use its date — if the \
+caller's phrasing implies a specific occurrence (e.g. "next week" vs "this \
+week"), pick the matching row for that occurrence, not just the first row \
+with that day name. Before passing the date to any tool or saying it back to \
+the caller, check that the weekday name and the date you picked are the same \
+row in the calendar above. Pass starts_at to tools as an ISO-8601 datetime \
+including the UTC offset for {timezone}.
 
 The caller is calling from {caller_phone_number} — this is already known \
 from caller ID, so never ask for their phone number. Reservations are \
