@@ -1,14 +1,28 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import admin_users, auth, calls, capacity_limits, customers, reservations
 from app.core.config import get_settings
+from app.core.cron import run_reservation_cleanup_loop
 from app.core.logging import configure_logging
 from app.phone import incoming, ivr, media_stream
 
 configure_logging()
 
-app = FastAPI(title="ABC Restaurant Backend")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    cleanup_task = asyncio.create_task(run_reservation_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+
+
+app = FastAPI(title="ABC Restaurant Backend", lifespan=lifespan)
 
 _settings = get_settings()
 app.add_middleware(
