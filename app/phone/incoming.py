@@ -28,9 +28,9 @@ async def incoming_call(
     gather = Gather(num_digits=1, action=f"{settings.public_base_url}/phone/gather", method="POST")
     gather.say(
         "Welcome to ABC Restaurant. This call may be recorded for quality "
-        "purposes. For ordering takeaway, booking for a large group, or "
-        "talking with our staff, press 1. To book a table, or change or "
-        "cancel a reservation using our AI system, press 2."
+        "purposes. To book a table, or change or cancel a reservation using "
+        "our AI system, press 1. For ordering takeaway, booking for a large "
+        "group, or talking with our staff, press 2."
     )
     vr.append(gather)
     # If the caller doesn't press anything, repeat once via Twilio's default
