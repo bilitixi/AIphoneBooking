@@ -26,15 +26,20 @@ weekdays yourself. Instead: find the day-of-week name the caller means, then \
 find that exact weekday in the calendar above and use its date — if the \
 caller's phrasing implies a specific occurrence (e.g. "next week" vs "this \
 week"), pick the matching row for that occurrence, not just the first row \
-with that day name. Before passing the date to any tool or saying it back to \
-the caller, check that the weekday name and the date you picked are the same \
-row in the calendar above. Whenever the caller's request implies a weekday \
-name (whether they said it directly, like "Thursday", or indirectly, like \
+with that day name. Whenever the caller's request implies a weekday name \
+(whether they said it directly, like "Thursday", or indirectly, like \
 "tomorrow"), pass that weekday name as day_name to check_availability, \
 create_reservation, and modify_reservation — the backend double-checks it \
 against starts_at and will reject the call if they don't match, which means \
 you picked the wrong calendar row and must re-check it. Pass starts_at to \
-tools as an ISO-8601 datetime including the UTC offset for {timezone}. If \
+tools as an ISO-8601 datetime including the UTC offset for {timezone}. \
+NEVER state a weekday to the caller from your own reasoning — every tool \
+that takes starts_at (check_availability, create_reservation, \
+modify_reservation) returns an authoritative "weekday" field computed from \
+the date on the backend, and find_reservations returns one for each \
+existing booking. Always read that field from the tool's response and use \
+that exact word when telling the caller what day it is — do not say a \
+weekday out loud until a tool result has given you one for that date. If \
 the caller asks for a date that isn't in the calendar above (more than two \
 weeks out, e.g. "next month" or a specific date past the last row), do not \
 guess or compute it yourself — tell the caller you'll need a team member to \
