@@ -40,6 +40,11 @@ async def test_check_availability_rejects_mismatched_day_without_touching_db():
     assert "Friday" in result["error"]
 
 
+def test_local_weekday_is_computed_not_guessed():
+    starts_at = datetime(2026, 7, 17, 19, 0, tzinfo=NZ)  # Friday
+    assert tools._local_weekday(starts_at) == "Friday"
+
+
 async def test_create_reservation_rejects_mismatched_day_without_touching_db():
     result = await tools.create_reservation(
         db=None,

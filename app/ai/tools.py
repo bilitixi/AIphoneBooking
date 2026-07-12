@@ -22,15 +22,22 @@ _DAY_NAME_DESCRIPTION = (
 )
 
 
+def _local_weekday(starts_at: datetime) -> str:
+    """The authoritative weekday name for starts_at, in restaurant-local
+    terms. This is the only source of truth for weekday names — the agent
+    must read this from tool results rather than computing it itself."""
+    tz = ZoneInfo(get_settings().restaurant_timezone)
+    local = starts_at.astimezone(tz) if starts_at.tzinfo else starts_at.replace(tzinfo=tz)
+    return local.strftime("%A")
+
+
 def _weekday_mismatch(starts_at: datetime, day_name: str | None) -> dict | None:
     """Returns an error dict if starts_at doesn't actually fall on day_name,
     else None. starts_at is checked in restaurant-local terms, since that's
     the calendar the agent was given."""
     if not day_name:
         return None
-    tz = ZoneInfo(get_settings().restaurant_timezone)
-    local = starts_at.astimezone(tz) if starts_at.tzinfo else starts_at.replace(tzinfo=tz)
-    actual = local.strftime("%A")
+    actual = _local_weekday(starts_at)
     if actual.lower() != day_name.strip().lower():
         return {
             "error": (
@@ -172,7 +179,11 @@ async def check_availability(
         return mismatch
 
     availability = await reservation_service.check_availability(db, parsed_starts_at, party_size)
-    result = {"available": availability.available, "seats_remaining": availability.remaining}
+    result = {
+        "available": availability.available,
+        "seats_remaining": availability.remaining,
+        "weekday": _local_weekday(parsed_starts_at),
+    }
     if availability.closed_reason is not None:
         result["closed"] = True
         result["reason"] = availability.closed_reason
@@ -207,7 +218,11 @@ async def create_reservation(
         return {"success": False, "error": str(exc)}
 
     await db.commit()
-    return {"success": True, "reservation_id": str(reservation.id)}
+    return {
+        "success": True,
+        "reservation_id": str(reservation.id),
+        "weekday": _local_weekday(parsed_starts_at),
+    }
 
 
 async def find_reservations(db: AsyncSession, phone_number: str) -> dict:
@@ -223,6 +238,7 @@ async def find_reservations(db: AsyncSession, phone_number: str) -> dict:
             {
                 "reservation_id": str(r.id),
                 "starts_at": r.starts_at.astimezone(tz).isoformat(),
+                "weekday": r.starts_at.astimezone(tz).strftime("%A"),
                 "party_size": r.party_size,
                 "special_requests": r.special_requests,
             }
@@ -262,7 +278,10 @@ async def modify_reservation(
         return {"success": False, "error": str(exc)}
 
     await db.commit()
-    return {"success": True, "reservation_id": str(reservation.id)}
+    result = {"success": True, "reservation_id": str(reservation.id)}
+    if parsed_starts_at is not None:
+        result["weekday"] = _local_weekday(parsed_starts_at)
+    return result
 
 
 async def cancel_reservation(db: AsyncSession, reservation_id: str, phone_number: str) -> dict:
