@@ -25,7 +25,9 @@ async def incoming_call(
     # The prompt is said *inside* the Gather (rather than before it) so digit
     # collection starts as soon as the prompt begins — pressing 1 or 2 cuts
     # the announcement off immediately instead of waiting for it to finish.
-    gather = Gather(num_digits=1, action=f"{settings.public_base_url}/phone/gather", method="POST")
+    gather = Gather(
+        num_digits=1, action=f"{settings.public_base_url}/phone/gather", method="POST", timeout=45
+    )
     gather.say(
         "Welcome to ABC Restaurant. This call may be recorded for quality "
         "purposes. To book a table, or change or cancel a reservation using "
