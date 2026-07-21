@@ -17,7 +17,6 @@ class PhoneCallOut(BaseModel):
     id: UUID
     call_sid: str
     from_number: str
-    ivr_choice: str | None
     outcome: str | None
     started_at: datetime
     ended_at: datetime | None

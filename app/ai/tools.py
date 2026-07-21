@@ -298,7 +298,7 @@ async def cancel_reservation(db: AsyncSession, reservation_id: str, phone_number
 
 async def escalate_to_staff(reason: str) -> dict:
     # media_stream.py inspects this tool call and triggers the same TwiML
-    # <Dial> transfer used for the takeaway IVR path.
+    # <Dial> transfer used for escalating a live call to staff.
     return {"escalate": True, "reason": reason}
 
 

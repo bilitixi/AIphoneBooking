@@ -94,7 +94,6 @@ class PhoneCall(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     call_sid: Mapped[str] = mapped_column(unique=True, nullable=False)
     from_number: Mapped[str] = mapped_column(nullable=False)
-    ivr_choice: Mapped[str | None]
     outcome: Mapped[str | None]
     started_at: Mapped[datetime] = mapped_column(server_default=func.now())
     ended_at: Mapped[datetime | None]

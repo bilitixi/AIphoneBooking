@@ -8,7 +8,7 @@ from app.api import admin_users, auth, calls, capacity_limits, customers, reserv
 from app.core.config import get_settings
 from app.core.cron import run_reservation_cleanup_loop
 from app.core.logging import configure_logging
-from app.phone import incoming, ivr, media_stream
+from app.phone import incoming, media_stream
 
 configure_logging()
 
@@ -34,7 +34,6 @@ app.add_middleware(
 )
 
 app.include_router(incoming.router)
-app.include_router(ivr.router)
 app.include_router(media_stream.router)
 
 app.include_router(auth.router)
