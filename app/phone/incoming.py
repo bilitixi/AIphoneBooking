@@ -24,7 +24,7 @@ async def incoming_call(
     vr = VoiceResponse()
     vr.say(
         "Welcome to ABC Restaurant. This call may be recorded for quality "
-        "purposes. Connecting you to our reservation assistant."
+        "purposes. Connecting you to our AI reservation assistant."
     )
     ws_base = settings.public_base_url.replace("https://", "wss://").replace("http://", "ws://")
     connect = Connect()
