@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from twilio.twiml.voice_response import Gather, VoiceResponse
+from twilio.twiml.voice_response import Connect, VoiceResponse
 
 from app.core.config import get_settings
 from app.core.security import verify_twilio_signature
@@ -22,21 +22,13 @@ async def incoming_call(
 
     settings = get_settings()
     vr = VoiceResponse()
-    # The prompt is said *inside* the Gather (rather than before it) so digit
-    # collection starts as soon as the prompt begins — pressing 1 or 2 cuts
-    # the announcement off immediately instead of waiting for it to finish.
-    gather = Gather(
-        num_digits=1, action=f"{settings.public_base_url}/phone/gather", method="POST", timeout=45
-    )
-    gather.say(
+    vr.say(
         "Welcome to ABC Restaurant. This call may be recorded for quality "
-        "purposes. To book a table, or change or cancel a reservation using "
-        "our AI system, press 1. For ordering takeaway, booking for a large "
-        "group, or talking with our staff, press 2."
+        "purposes. Connecting you to our reservation assistant."
     )
-    vr.append(gather)
-    # If the caller doesn't press anything, repeat once via Twilio's default
-    # re-prompt behavior (falls through and hangs up otherwise).
-    vr.say("We didn't get your selection. Goodbye.")
+    ws_base = settings.public_base_url.replace("https://", "wss://").replace("http://", "ws://")
+    connect = Connect()
+    connect.stream(url=f"{ws_base}/ws/reservation?call_sid={CallSid}")
+    vr.append(connect)
 
     return Response(content=str(vr), media_type="application/xml")
