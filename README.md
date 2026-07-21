@@ -1,8 +1,8 @@
 # ABC Restaurant Backend
 
-FastAPI backend implementing `backend_design.md`: Twilio phone gateway (IVR +
-media streams), a Claude-driven reservation agent, and REST APIs for the
-admin portal. Persistence is Postgres (Supabase).
+FastAPI backend implementing `backend_design.md`: Twilio phone gateway (media
+streams), a Claude-driven reservation agent, and REST APIs for the admin
+portal. Persistence is Postgres (Supabase).
 
 ## Setup
 

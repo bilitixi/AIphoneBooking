@@ -62,7 +62,6 @@ CREATE TABLE phone_calls (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     call_sid      TEXT NOT NULL UNIQUE,
     from_number   TEXT NOT NULL,
-    ivr_choice    TEXT,                    -- '1' = takeaway, '2' = reservation
     outcome       TEXT
                       CHECK (outcome IN (
                           'transferred_to_staff', 'handled_by_ai',

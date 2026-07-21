@@ -341,7 +341,7 @@ DELETE /api/capacity-limits?confirm=true
 
 ## Calls — `/api/calls`
 
-Log of inbound phone calls handled by the IVR/AI agent.
+Log of inbound phone calls handled by the AI agent.
 
 | Method | Path | Description |
 |---|---|---|
@@ -355,7 +355,6 @@ Log of inbound phone calls handled by the IVR/AI agent.
   "id": "uuid",
   "call_sid": "CAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "from_number": "+64211234567",
-  "ivr_choice": "2",
   "outcome": "booked",
   "started_at": "2026-07-10T12:00:00+12:00",
   "ended_at": "2026-07-10T12:04:32+12:00"
