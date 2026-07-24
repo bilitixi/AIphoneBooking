@@ -51,10 +51,13 @@ weeks out, e.g. "next month" or a specific date past the last row), do not \
 guess or compute it yourself — tell the caller you'll need a team member to \
 confirm a booking that far out and call escalate_to_staff.
 
-The caller is calling from {caller_phone_number} — this is already known \
-from caller ID, so never ask for their phone number. Reservations are \
-automatically tied to this number regardless of what you pass to the tools. \
-When calling find_customer or create_reservation, use this number directly.
+Caller ID is not reliable for this line (calls may arrive forwarded), so \
+you must ask the caller for their phone number yourself early in the call — \
+never assume you already know it. Read the number back to them digit by \
+digit to confirm you captured it correctly before using it. Use that \
+confirmed number — not any other value — for find_customer, \
+create_reservation, find_reservations, modify_reservation, and \
+cancel_reservation.
 
 Opening hours (background only — don't recite these to the caller unless \
 asked, or unless their request needs one of the rules below): {opening_hours_note} \
@@ -94,7 +97,8 @@ Rules:
   reacting to part of it. Keep track of what you already know from earlier \
   in the call and never ask the caller to repeat or re-confirm something \
   they've already told you — only ask about whatever is still missing.
-- Always resolve the caller's phone number via find_customer before booking.
+- Ask for and confirm the caller's phone number before anything else, then \
+  resolve it via find_customer before booking.
 - Call check_availability before create_reservation, but be ready for \
   create_reservation to fail anyway (the slot may have just filled up) — if \
   it fails, suggest a different time.
@@ -122,8 +126,8 @@ Rules:
   several, confirm with the caller which one they mean; if there are none, \
   say so plainly rather than guessing.
 - After successfully booking a reservation, briefly mention they'll need to \
-  call back from this same phone number to change or cancel later — one \
-  short clause tacked onto the confirmation, not a separate sentence.
+  give this same phone number when they call back to change or cancel later \
+  — one short clause tacked onto the confirmation, not a separate sentence.
 - Once the caller's request is complete — booking confirmed, or change/cancel \
   done — and they have nothing else, say a warm goodbye and then call end_call \
   to hang up. Say the goodbye in the same reply as the end_call tool call, \
@@ -156,7 +160,7 @@ def _opening_hours_note() -> str:
     return "the restaurant is " + "; ".join(parts) + "."
 
 
-def _build_system_prompt(caller_phone_number: str) -> str:
+def _build_system_prompt() -> str:
     tz_name = get_settings().restaurant_timezone
     now = datetime.now(ZoneInfo(tz_name))
     calendar = "\n".join(
@@ -167,7 +171,6 @@ def _build_system_prompt(caller_phone_number: str) -> str:
     return SYSTEM_PROMPT_TEMPLATE.format(
         current_datetime=now.strftime("%A, %B %d, %Y, %I:%M %p"),
         timezone=tz_name,
-        caller_phone_number=caller_phone_number,
         calendar=calendar,
         opening_hours_note=_opening_hours_note(),
     )
@@ -217,7 +220,7 @@ async def run_turn(
     sentence is complete — including text emitted before tool calls — so
     speech synthesis can start while Claude is still generating. The returned
     full text is for logging; callers using on_text must not speak it again."""
-    system_prompt = _build_system_prompt(caller_phone_number)
+    system_prompt = _build_system_prompt()
     spoke_anything = False
 
     for _ in range(MAX_TOOL_ITERATIONS):
@@ -263,7 +266,7 @@ async def run_turn(
 
         tool_results = []
         for tool_use in tool_uses:
-            result = await _execute_tool(db, caller_phone_number, tool_use.name, tool_use.input)
+            result = await _execute_tool(db, tool_use.name, tool_use.input)
             if isinstance(result, dict) and result.get("escalate"):
                 raise Escalate(result.get("reason", "caller requested a person"))
             if isinstance(result, dict) and result.get("end_call"):
@@ -281,7 +284,7 @@ async def run_turn(
     return fallback, conversation
 
 
-async def _execute_tool(db: AsyncSession, caller_phone_number: str, name: str, tool_input: dict) -> dict:
+async def _execute_tool(db: AsyncSession, name: str, tool_input: dict) -> dict:
     fn = tools.DISPATCH.get(name)
     if fn is None:
         return {"error": f"Unknown tool: {name}"}
@@ -290,10 +293,8 @@ async def _execute_tool(db: AsyncSession, caller_phone_number: str, name: str, t
     params = inspect.signature(fn).parameters
     if "db" in params:
         kwargs["db"] = db
-    # The agent should never be able to act as a different caller than the
-    # one on the line, regardless of what phone_number it passes as input.
-    if "phone_number" in params:
-        kwargs["phone_number"] = caller_phone_number
+    # phone_number now comes from what the caller stated verbally (tool_input),
+    # not from Twilio's From header — caller ID isn't trusted as identity here.
 
     try:
         return await fn(**kwargs)
