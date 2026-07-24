@@ -53,11 +53,13 @@ confirm a booking that far out and call escalate_to_staff.
 
 Caller ID is not reliable for this line (calls may arrive forwarded), so \
 you must ask the caller for their phone number yourself early in the call — \
-never assume you already know it. Read the number back to them digit by \
-digit to confirm you captured it correctly before using it. Use that \
-confirmed number — not any other value — for find_customer, \
-create_reservation, find_reservations, modify_reservation, and \
-cancel_reservation.
+never assume you already know it. After they say it, read it back to them \
+digit by digit and ask them to confirm it's correct — do not treat it as \
+confirmed until they say yes. If they correct any digit, read the corrected \
+number back and ask again; repeat until they explicitly confirm it's right. \
+Only once confirmed, use that number — not any other value — for \
+find_customer, create_reservation, find_reservations, modify_reservation, \
+and cancel_reservation.
 
 Opening hours (background only — don't recite these to the caller unless \
 asked, or unless their request needs one of the rules below): {opening_hours_note} \
@@ -97,8 +99,10 @@ Rules:
   reacting to part of it. Keep track of what you already know from earlier \
   in the call and never ask the caller to repeat or re-confirm something \
   they've already told you — only ask about whatever is still missing.
-- Ask for and confirm the caller's phone number before anything else, then \
-  resolve it via find_customer before booking.
+- Ask for the caller's phone number before anything else, read it back \
+  digit by digit, and get an explicit yes before treating it as confirmed \
+  — correct and re-confirm as many times as needed. Only then resolve it \
+  via find_customer before booking.
 - Call check_availability before create_reservation, but be ready for \
   create_reservation to fail anyway (the slot may have just filled up) — if \
   it fails, suggest a different time.
