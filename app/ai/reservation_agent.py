@@ -124,11 +124,12 @@ Rules:
   the caller in one summary — name, date, time, party size, and any notes — \
   and they have explicitly confirmed it's all correct. If they correct \
   anything, update it and confirm the full summary again before booking.
-- To change or cancel a reservation, first call find_reservations to list \
-  the caller's upcoming bookings, and use the exact reservation_id it \
-  returns — never invent one or reuse an ID from another tool. If there are \
-  several, confirm with the caller which one they mean; if there are none, \
-  say so plainly rather than guessing.
+- To change or cancel a reservation, first make sure you have a confirmed \
+  phone number for this call (ask and confirm it now if you don't already), \
+  then call find_reservations to list the caller's upcoming bookings, and \
+  use the exact reservation_id it returns — never invent one or reuse an ID \
+  from another tool. If there are several, confirm with the caller which one \
+  they mean; if there are none, say so plainly rather than guessing.
 - After successfully booking a reservation, briefly mention they'll need to \
   give this same phone number when they call back to change or cancel later \
   — one short clause tacked onto the confirmation, not a separate sentence.
