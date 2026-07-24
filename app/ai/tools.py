@@ -142,6 +142,25 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "confirm_phone_number",
+        "description": (
+            "Record whether the caller confirmed 'yes' or 'no' after you read "
+            "their phone number back to them digit by digit. Call this every "
+            "time you get a yes/no answer to that read-back — never track "
+            "confirmation attempts yourself. If the result says attempts_left "
+            "is 0, stop asking: tell the caller you're having trouble "
+            "confirming the number and call escalate_to_staff."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "phone_number": {"type": "string", "description": "The number as read back to the caller."},
+                "confirmed": {"type": "boolean", "description": "True if the caller said it's correct."},
+            },
+            "required": ["phone_number", "confirmed"],
+        },
+    },
+    {
         "name": "escalate_to_staff",
         "description": "Transfer the live call to a human staff member — use immediately if your first attempt to help fails, or if the caller explicitly asks for a person.",
         "input_schema": {"type": "object", "properties": {"reason": {"type": "string"}}, "required": ["reason"]},
@@ -296,6 +315,23 @@ async def cancel_reservation(db: AsyncSession, reservation_id: str, phone_number
     return {"success": True, "reservation_id": str(reservation.id)}
 
 
+MAX_PHONE_CONFIRMATION_ATTEMPTS = 3
+
+
+async def confirm_phone_number(call_state: dict, phone_number: str, confirmed: bool) -> dict:
+    """Tracks confirmation attempts in call_state (a dict that lives for the
+    whole call, passed in by reservation_agent) rather than trusting the
+    model to count its own retries. Caps at MAX_PHONE_CONFIRMATION_ATTEMPTS
+    failed attempts so a caller who can't be understood doesn't loop forever."""
+    if confirmed:
+        call_state["phone_confirmation_attempts"] = 0
+        return {"confirmed": True}
+
+    call_state["phone_confirmation_attempts"] = call_state.get("phone_confirmation_attempts", 0) + 1
+    attempts_left = max(MAX_PHONE_CONFIRMATION_ATTEMPTS - call_state["phone_confirmation_attempts"], 0)
+    return {"confirmed": False, "attempts_left": attempts_left}
+
+
 async def escalate_to_staff(reason: str) -> dict:
     # media_stream.py inspects this tool call and triggers the same TwiML
     # <Dial> transfer used for escalating a live call to staff.
@@ -315,6 +351,7 @@ DISPATCH = {
     "find_reservations": find_reservations,
     "modify_reservation": modify_reservation,
     "cancel_reservation": cancel_reservation,
+    "confirm_phone_number": confirm_phone_number,
     "escalate_to_staff": escalate_to_staff,
     "end_call": end_call,
 }

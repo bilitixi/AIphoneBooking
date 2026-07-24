@@ -54,9 +54,12 @@ confirm a booking that far out and call escalate_to_staff.
 Caller ID is not reliable for this line (calls may arrive forwarded), so \
 you must ask the caller for their phone number yourself early in the call — \
 never assume you already know it. After they say it, read it back to them \
-digit by digit and ask them to confirm it's correct — do not treat it as \
-confirmed until they say yes. If they correct any digit, read the corrected \
-number back and ask again; repeat until they explicitly confirm it's right. \
+digit by digit, ask them to confirm it's correct, and call \
+confirm_phone_number with their yes/no answer every time — that tool tracks \
+attempts for you, so never count retries yourself. If they say it's wrong, \
+get the corrected number, read it back, and ask again. If confirm_phone_number \
+ever returns attempts_left: 0, stop retrying — tell the caller you're having \
+trouble confirming their number and call escalate_to_staff right away. \
 Only once confirmed, use that number — not any other value — for \
 find_customer, create_reservation, find_reservations, modify_reservation, \
 and cancel_reservation.
@@ -100,9 +103,9 @@ Rules:
   in the call and never ask the caller to repeat or re-confirm something \
   they've already told you — only ask about whatever is still missing.
 - Ask for the caller's phone number before anything else, read it back \
-  digit by digit, and get an explicit yes before treating it as confirmed \
-  — correct and re-confirm as many times as needed. Only then resolve it \
-  via find_customer before booking.
+  digit by digit, and call confirm_phone_number with their yes/no answer — \
+  don't treat it as confirmed until that tool says confirmed: true. Only \
+  then resolve it via find_customer before booking.
 - Call check_availability before create_reservation, but be ready for \
   create_reservation to fail anyway (the slot may have just filled up) — if \
   it fails, suggest a different time.
@@ -215,11 +218,17 @@ async def run_turn(
     db: AsyncSession,
     caller_phone_number: str,
     conversation: list[dict],
+    call_state: dict,
     on_text: OnText | None = None,
 ) -> tuple[str, list[dict]]:
     """Runs one caller turn through Claude, executing any tool calls, and
     returns (final_text_reply, updated_conversation). Raises Escalate if the
     agent invokes escalate_to_staff.
+
+    call_state is a plain dict that lives for the whole call (created once by
+    the caller, e.g. media_stream.py, and passed back in on every turn) —
+    it's how confirm_phone_number tracks confirmation attempts without
+    trusting the model to count its own retries.
 
     All caller-audible text is delivered through on_text as soon as each
     sentence is complete — including text emitted before tool calls — so
@@ -271,7 +280,7 @@ async def run_turn(
 
         tool_results = []
         for tool_use in tool_uses:
-            result = await _execute_tool(db, tool_use.name, tool_use.input)
+            result = await _execute_tool(db, call_state, tool_use.name, tool_use.input)
             if isinstance(result, dict) and result.get("escalate"):
                 raise Escalate(result.get("reason", "caller requested a person"))
             if isinstance(result, dict) and result.get("end_call"):
@@ -289,7 +298,7 @@ async def run_turn(
     return fallback, conversation
 
 
-async def _execute_tool(db: AsyncSession, name: str, tool_input: dict) -> dict:
+async def _execute_tool(db: AsyncSession, call_state: dict, name: str, tool_input: dict) -> dict:
     fn = tools.DISPATCH.get(name)
     if fn is None:
         return {"error": f"Unknown tool: {name}"}
@@ -298,6 +307,8 @@ async def _execute_tool(db: AsyncSession, name: str, tool_input: dict) -> dict:
     params = inspect.signature(fn).parameters
     if "db" in params:
         kwargs["db"] = db
+    if "call_state" in params:
+        kwargs["call_state"] = call_state
     # phone_number now comes from what the caller stated verbally (tool_input),
     # not from Twilio's From header — caller ID isn't trusted as identity here.
 

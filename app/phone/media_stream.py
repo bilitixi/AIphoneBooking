@@ -100,6 +100,9 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
     transcriber = create_transcriber()
     synthesizer = create_synthesizer()
     conversation: list[dict] = []
+    # Lives for the whole call; confirm_phone_number uses it to cap retries
+    # instead of trusting the model to count its own confirmation attempts.
+    call_state: dict = {}
 
     # Guards handle_transcripts against hearing the agent's own voice echoed
     # back through the caller's line. `speaking` covers the audio actually in
@@ -174,7 +177,7 @@ async def reservation_media_stream(websocket: WebSocket) -> None:
                     # run_turn speaks each sentence via speak_text as soon as
                     # it's generated; the returned reply is logged, not spoken.
                     reply, conversation = await run_turn(
-                        db, caller_phone_number, conversation, on_text=speak_text
+                        db, caller_phone_number, conversation, call_state, on_text=speak_text
                     )
                 except Escalate as esc:
                     # The agent's own handoff explanation was already streamed
