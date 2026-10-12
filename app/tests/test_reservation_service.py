@@ -20,6 +20,14 @@ async def _make_customer(db, phone="+6421000000"):
     return customer
 
 
+def _next_monday_dinner():
+    """A Monday 19:00 at least a week out, for tests that depend on the
+    reservation still being upcoming relative to now."""
+    today = datetime.now(NZ).date()
+    monday = today + timedelta(days=7 + (-today.weekday()) % 7)
+    return datetime(monday.year, monday.month, monday.day, 19, 0, tzinfo=NZ)
+
+
 async def test_create_reservation_succeeds(db_session):
     customer = await _make_customer(db_session)
     starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner
@@ -149,7 +157,7 @@ async def test_check_availability_reports_closed(db_session):
 async def test_list_upcoming_reservations_scoped_to_caller(db_session):
     customer = await _make_customer(db_session, phone="+6421222222")
     other = await _make_customer(db_session, phone="+6421333333")
-    starts_at = datetime(2026, 8, 3, 19, 0, tzinfo=NZ)  # Monday dinner
+    starts_at = _next_monday_dinner()
 
     mine = await reservation_service.create_reservation(
         db_session, customer_id=customer.id, party_size=2, starts_at=starts_at
