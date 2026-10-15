@@ -4,6 +4,22 @@ FastAPI backend implementing `backend_design.md`: Twilio phone gateway (media
 streams), a Claude-driven reservation agent, and REST APIs for the admin
 portal. Persistence is Postgres (Supabase).
 
+## Deployment
+
+```mermaid
+flowchart LR
+    caller(["Caller"]) --> twilio["Twilio"]
+    staff(["Staff"]) --> admin["Admin portal<br/>(Vercel)"]
+
+    twilio --> backend["FastAPI backend<br/>(Render)"]
+    admin --> backend
+
+    backend --> db[("Postgres<br/>(Supabase)")]
+    backend --> ai["Claude · Deepgram · ElevenLabs"]
+
+    github["GitHub Actions<br/>(tests on main)"] -. "deploy hook" .-> backend
+```
+
 ## Setup
 
 ```bash
